@@ -17,6 +17,7 @@
 #include "klee/Expr.h"
 
 #include "Memory.h"
+#include "MemoryState.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -81,6 +82,7 @@ ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
     : constraints(assumptions), queryCost(0.), ptreeNode(0) {}
 
 ExecutionState::~ExecutionState() {
+
   for (unsigned int i=0; i<symbolics.size(); i++)
   {
     const MemoryObject *mo = symbolics[i].first;
@@ -143,8 +145,12 @@ void ExecutionState::pushFrame(KInstIterator caller, KFunction *kf) {
 void ExecutionState::popFrame() {
   StackFrame &sf = stack.back();
   for (std::vector<const MemoryObject*>::iterator it = sf.allocas.begin(), 
-         ie = sf.allocas.end(); it != ie; ++it)
+         ie = sf.allocas.end(); it != ie; ++it) {
+    if(stack.size() > 1) { // do not register deallocation of locals in initial stack frame
+      memoryState.registerDeallocation(**it);
+    }
     addressSpace.unbindObject(*it);
+  }
   stack.pop_back();
 }
 

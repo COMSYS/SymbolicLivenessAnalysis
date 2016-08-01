@@ -14,6 +14,7 @@
 #include "ImpliedValue.h"
 #include "Memory.h"
 #include "MemoryManager.h"
+#include "MemoryState.h"
 #include "PTree.h"
 #include "Searcher.h"
 #include "SeedInfo.h"
@@ -652,7 +653,6 @@ void Executor::initializeGlobals(ExecutionState &state) {
       const ObjectState *os = state.addressSpace.findObject(mo);
       assert(os);
       ObjectState *wos = state.addressSpace.getWriteable(mo, os);
-      
       initializeGlobalObject(state, wos, i->getInitializer(), 0);
       // if(i->isConstant()) os->setReadOnly(true);
     }
@@ -1988,7 +1988,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::Store: {
     ref<Expr> base = eval(ki, 1, state).value;
     ref<Expr> value = eval(ki, 0, state).value;
+    state.memoryState.registerWrite(state, base);
     executeMemoryOperation(state, true, base, value, 0);
+    state.memoryState.registerWrite(state, base);
     break;
   }
 
@@ -3074,6 +3076,7 @@ void Executor::executeAlloc(ExecutionState &state,
       bindLocal(target, state, 
                 ConstantExpr::alloc(0, Context::get().getPointerWidth()));
     } else {
+      state.memoryState.registerAllocation(*mo);
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
         os->initializeToZero();
@@ -3190,6 +3193,7 @@ void Executor::executeFree(ExecutionState &state,
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
+        state.memoryState.registerDeallocation(*mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, Expr::createPointer(0));
