@@ -1003,6 +1003,7 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   }
 
   state.addConstraint(condition);
+  state.memoryState.registerConstraint(condition);
   if (ivcEnabled)
     doImpliedValueConcretization(state, condition, 
                                  ConstantExpr::alloc(1, Expr::Bool));
@@ -1988,9 +1989,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::Store: {
     ref<Expr> base = eval(ki, 1, state).value;
     ref<Expr> value = eval(ki, 0, state).value;
-    state.memoryState.registerWrite(state, base);
     executeMemoryOperation(state, true, base, value, 0);
-    state.memoryState.registerWrite(state, base);
     break;
   }
 
@@ -3286,7 +3285,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+          state.memoryState.registerWrite(address, *mo, *wos);
           wos->write(offset, value);
+          state.memoryState.registerWrite(address, *mo, *wos);
         }          
       } else {
         ref<Expr> result = os->read(offset, type);
@@ -3329,7 +3330,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
+          state.memoryState.registerWrite(address, *mo, *wos);
           wos->write(mo->getOffsetExpr(address), value);
+          state.memoryState.registerWrite(address, *mo, *wos);
         }
       } else {
         ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
