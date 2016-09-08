@@ -16,27 +16,37 @@
 
 namespace klee {
 
-struct MemoryTraceEntry {
-  KInstruction *inst;
-  std::array<std::uint8_t, 20> hash;
-
-  MemoryTraceEntry(KInstruction *inst, std::array<std::uint8_t, 20> hash) : inst(inst), hash(hash) {}
-
-  bool operator==(const MemoryTraceEntry &rhs) {
-    // check KInstruction first (short-circuit evaluation)
-    return (inst == rhs.inst && hash == rhs.hash);
-  }
-
-  bool operator!=(const MemoryTraceEntry &rhs) {
-    return !(operator==(rhs));
-  }
-};
-
 class MemoryTrace {
 
 private:
+  struct MemoryTraceEntry {
+    const KInstruction * inst;
+    std::array<std::uint8_t, 20> hash;
+
+    MemoryTraceEntry(const KInstruction *inst, std::array<std::uint8_t, 20> hash)
+        : inst(inst), hash(hash) {}
+
+    bool operator==(const MemoryTraceEntry &rhs) {
+      // check KInstruction first (short-circuit evaluation)
+      return (inst == rhs.inst && hash == rhs.hash);
+    }
+
+    bool operator!=(const MemoryTraceEntry &rhs) {
+      return !(operator==(rhs));
+    }
+  };
+
+  struct StackFrameEntry {
+    std::size_t index;
+    std::array<std::uint8_t, 20> hashDifference;
+    bool allocas;
+
+    StackFrameEntry(std::size_t index, std::array<std::uint8_t, 20> hashDifference, bool allocas)
+        : index(index), hashDifference(hashDifference), allocas(allocas) {}
+  };
+
   std::vector<MemoryTraceEntry> stack;
-  std::vector<std::size_t> stackFrames;
+  std::vector<StackFrameEntry> stackFrames;
 
 public:
   MemoryTrace() = default;
@@ -44,8 +54,9 @@ public:
 
   typedef std::reverse_iterator<std::vector<MemoryTraceEntry>::iterator> stack_iter;
 
-  void registerBasicBlock(KInstruction *instruction, const std::array<std::uint8_t, 20> &hash, bool newStackFrame);
-  void popFrame();
+  void registerBasicBlock(const KInstruction *instruction, const std::array<std::uint8_t, 20> &hash);
+  void registerEndOfStackFrame(std::array<std::uint8_t, 20> hashDifference, bool allocas);
+  std::array<std::uint8_t, 20> popFrame();
   bool findLoop();
   void clear();
 
@@ -54,13 +65,13 @@ public:
     if(stack.empty()) {
       std::cout << "MemoryTrace is empty" << std::endl;
     } else {
-      std::vector<std::size_t> tmpFrames = stackFrames;
+      std::vector<StackFrameEntry> tmpFrames = stackFrames;
       std::cout << "TOP OF MemoryTrace STACK" << std::endl;
       for(std::reverse_iterator<std::vector<MemoryTraceEntry>::iterator> it = stack.rbegin(); it != stack.rend(); ++it) {
         const MemoryTraceEntry &entry = *it;
         const InstructionInfo &ii = *entry.inst->info;
         if(!tmpFrames.empty()) {
-          if((std::size_t) (stack.rend() - it) == tmpFrames.back()) {
+          if((std::size_t) (stack.rend() - it) == tmpFrames.back().index) {
             std::cout << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/" << stackFrames.size() << std::endl;
             tmpFrames.pop_back();
           }

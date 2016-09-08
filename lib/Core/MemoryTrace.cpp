@@ -2,12 +2,14 @@
 
 namespace klee {
 
-void MemoryTrace::registerBasicBlock(KInstruction *instruction, const std::array<std::uint8_t, 20> &hash, bool newStackFrame) {
+void MemoryTrace::registerBasicBlock(const KInstruction *instruction, const std::array<std::uint8_t, 20> &hash) {
   MemoryTraceEntry *entry = new MemoryTraceEntry(instruction, hash);
   stack.push_back(*entry);
+}
 
-  if(newStackFrame)
-    stackFrames.push_back(stack.size() - 1);
+void MemoryTrace::registerEndOfStackFrame(std::array<std::uint8_t, 20> hashDifference, bool allocas) {
+  StackFrameEntry *entry = new StackFrameEntry(stack.size(), hashDifference, allocas);
+  stackFrames.push_back(*entry);
 }
 
 void MemoryTrace::clear() {
@@ -23,18 +25,29 @@ void MemoryTrace::clear() {
   #endif
 }
 
-void MemoryTrace::popFrame() {
+std::array<std::uint8_t, 20> MemoryTrace::popFrame() {
   #ifdef MEMORYTRACE_DEBUG
   debugStack();
   #endif
 
   if(!stackFrames.empty()) {
-    std::size_t index = stackFrames.back();
+    StackFrameEntry &sfe = stackFrames.back();
+    std::array<std::uint8_t, 20> hashDifference = sfe.hashDifference;
+
+    // delete all PCs and hashes of BasicBlock
+    // that are part of current stack frame
+    std::size_t index = sfe.index;
     stack.erase(stack.begin() + index, stack.end());
+    // there is no need to modify the indices in
+    // stackFrames because lower indices stay the same
+
+    // remove topmost stack frame
     stackFrames.pop_back();
+
+    return hashDifference;
   }
-  // there is no need to modify the indices in
-  // stackFrames because lower indices stay the same
+
+  return {};
 
   #ifdef MEMORYTRACE_DEBUG
   std::cout << "Popping StackFrame" << std::endl;
@@ -64,7 +77,12 @@ bool MemoryTrace::findLoop() {
       }
 
       if(upperIt == doubleIt) {
-        // all (upperIt-lowerIt) predecessors are the same => loop found
+        // all (lowerIt-upperIt) predecessors are the same => loop found
+
+        #ifdef MEMORYTRACE_DEBUG
+        std::cout << std::dec << "MemoryTrace: Loop consisting of " << (lowerIt-upperIt) << " BasicBlocks\n";
+        #endif
+
         return true;
       } else {
         // reset lowerIt to continue search for

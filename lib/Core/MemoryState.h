@@ -18,8 +18,10 @@ namespace klee {
 class MemoryState {
 
 private:
-  std::array<std::uint8_t, 20> shaBuffer = {};
+  std::array<std::uint8_t, 20> stateHash = {};
+  std::array<std::uint8_t, 20> stackFrameHash = {};
   MemoryTrace trace;
+  bool allocasInCurrentStackFrame = false;
 
   #ifdef MEMORYSTATE_DEBUG
   static std::string Sha1String(const std::array<std::uint8_t, 20> &buffer);
@@ -29,7 +31,8 @@ private:
   void addUint64ToHash(util::SHA1 &sha1, const std::uint64_t address);
   void addConstantExprToHash(util::SHA1 &sha1, const ConstantExpr &expr);
   void addExprStringToHash(util::SHA1 &sha1, ref<Expr> expr);
-  void xorHash(const std::array<std::uint8_t, 20> &hash);
+  void xorStateHash(const std::array<std::uint8_t, 20> &hash);
+  void xorStackFrameHash(const std::array<std::uint8_t, 20> &hash);
 
 public:
   MemoryState() = default;
@@ -55,8 +58,8 @@ public:
 
   void registerConstraint(ref<Expr> condition);
 
-  void registerLocal(KInstruction *target, ref<Expr> value);
-  void unregisterLocal(KInstruction *target, ref<Expr> value) {
+  void registerLocal(const KInstruction *target, ref<Expr> value);
+  void unregisterLocal(const KInstruction *target, ref<Expr> value) {
     #ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: UNREGISTER\n";
     #endif
@@ -64,14 +67,15 @@ public:
     registerLocal(target, value);
   }
 
-  void registerArgument(KFunction *kf, unsigned index, ref<Expr> value);
+  void registerArgument(const KFunction *kf, unsigned index, ref<Expr> value);
 
   void registerExternalFunctionCall();
 
-  void registerBasicBlock(KInstruction *inst, bool newStackFrame = false);
+  void registerBasicBlock(const KInstruction *inst);
 
   bool findLoop();
 
+  void registerPushFrame();
   void registerPopFrame();
 };
 }

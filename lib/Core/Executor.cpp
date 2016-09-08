@@ -1264,7 +1264,8 @@ void Executor::executeCall(ExecutionState &state,
     KFunction *kf = kmodule->functionMap[f];
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
-    state.memoryState.registerBasicBlock(state.pc, true);
+    state.memoryState.registerPushFrame();
+    state.memoryState.registerBasicBlock(state.pc);
     if(state.memoryState.findLoop()) {
       terminateStateOnError(state,
         "infinite loop",

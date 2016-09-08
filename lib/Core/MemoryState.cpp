@@ -25,7 +25,7 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
 
   addUint64ToHash(sha1, mo.address);
   sha1.store_result(hashDigest.begin(), hashDigest.end());
-  xorHash(hashDigest);
+  xorStateHash(hashDigest);
 
   #ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: processing (de)allocation at address " << std::dec << mo.address;
@@ -41,6 +41,9 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
     std::uint8_t offsetWidth = static_cast<std::uint8_t>(ceil(log10(os.size)));
     std::cout << "MemoryState: processing ObjectState at base address " << ExprString(base) << std::endl;
   #endif
+
+  if(!allocasInCurrentStackFrame)
+    allocasInCurrentStackFrame = true;
 
   for(std::uint64_t offset = 0; offset < os.size; offset++) {
     // add base address to sha1 hash
@@ -81,7 +84,7 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
 
     // compute sha1 hash and xor to existing hash
     sha1.store_result(hashDigest.begin(), hashDigest.end());
-    xorHash(hashDigest);
+    xorStateHash(hashDigest);
 
     #ifdef MEMORYSTATE_DEBUG
       std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
@@ -97,7 +100,7 @@ void MemoryState::registerConstraint(ref<Expr> condition) {
 
   addExprStringToHash(sha1, condition);
   sha1.store_result(hashDigest.begin(), hashDigest.end());
-  xorHash(hashDigest);
+  xorStateHash(hashDigest);
 
   #ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: adding new constraint: " << ExprString(condition);
@@ -105,7 +108,7 @@ void MemoryState::registerConstraint(ref<Expr> condition) {
   #endif
 }
 
-void MemoryState::registerLocal(KInstruction *target, ref<Expr> value) {
+void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
@@ -119,22 +122,19 @@ void MemoryState::registerLocal(KInstruction *target, ref<Expr> value) {
     addExprStringToHash(sha1, value);
   }
 
-    // TODO: Stackframe ?????
-
-    //TODO: only registerLocal if it is not a load instruction?
-
   sha1.store_result(hashDigest.begin(), hashDigest.end());
-  xorHash(hashDigest);
+  xorStateHash(hashDigest);
+  xorStackFrameHash(hashDigest);
 
   #ifdef MEMORYSTATE_DEBUG
-    std::cout << "MemoryState: adding local " << index
+    std::cout << "MemoryState: adding local"
         << " to instruction " << reinterpret_cast<std::intptr_t>(target)
         << ": " << ExprString(value) << std::endl;
     std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
   #endif
 }
 
-void MemoryState::registerArgument(KFunction *kf, unsigned index, ref<Expr> value) {
+void MemoryState::registerArgument(const KFunction *kf, unsigned index, ref<Expr> value) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
@@ -148,10 +148,9 @@ void MemoryState::registerArgument(KFunction *kf, unsigned index, ref<Expr> valu
     addExprStringToHash(sha1, value);
   }
 
-    // TODO: Stackframe ?????
-
   sha1.store_result(hashDigest.begin(), hashDigest.end());
-  xorHash(hashDigest);
+  xorStateHash(hashDigest);
+  xorStackFrameHash(hashDigest);
 
   #ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: adding argument " << index
@@ -162,12 +161,12 @@ void MemoryState::registerArgument(KFunction *kf, unsigned index, ref<Expr> valu
 }
 
 
-void MemoryState::registerBasicBlock(KInstruction *inst, bool newStackFrame) {
+void MemoryState::registerBasicBlock(const KInstruction *inst) {
   #ifdef MEMORYSTATE_DEBUG
   std::cout << "MemoryState: BASICBLOCK\n";
   #endif
 
-  trace.registerBasicBlock(inst, shaBuffer, newStackFrame);
+  trace.registerBasicBlock(inst, stateHash);
 }
 
 bool MemoryState::findLoop() {
@@ -182,12 +181,31 @@ bool MemoryState::findLoop() {
   return result;
 }
 
+void MemoryState::registerPushFrame() {
+  #ifdef MEMORYSTATE_DEBUG
+  std::cout << "MemoryState: PUSHFRAME\n";
+  #endif
+
+  trace.registerEndOfStackFrame(stackFrameHash, allocasInCurrentStackFrame);
+
+  // remove difference from stateHash
+  // to make locals and parameters "invisible"
+  xorStateHash(stackFrameHash);
+
+  // reset stack frame specific information
+  stackFrameHash = {};
+  allocasInCurrentStackFrame = false;
+}
+
 void MemoryState::registerPopFrame() {
   #ifdef MEMORYSTATE_DEBUG
   std::cout << "MemoryState: POPFRAME\n";
   #endif
 
-  trace.popFrame();
+  // apply old difference to stateHash
+  // to make locals and parameters "visible" again
+  std::array<std::uint8_t, 20> hashDifference = trace.popFrame();
+  xorStateHash(hashDifference);
 }
 
 void MemoryState::addUint64ToHash(util::SHA1 &sha1, const std::uint64_t value) {
@@ -222,9 +240,15 @@ void MemoryState::addExprStringToHash(util::SHA1 &sha1, ref<Expr> expr) {
   sha1.update_range(str.begin(), str.end());
 }
 
-void MemoryState::xorHash(const std::array<std::uint8_t, 20> &hash) {
+void MemoryState::xorStateHash(const std::array<std::uint8_t, 20> &hash) {
   for (std::size_t i = 0; i < 20; ++i) {
-    shaBuffer[i] ^= hash[i];
+    stateHash[i] ^= hash[i];
+  }
+}
+
+void MemoryState::xorStackFrameHash(const std::array<std::uint8_t, 20> &hash) {
+  for (std::size_t i = 0; i < 20; ++i) {
+    stackFrameHash[i] ^= hash[i];
   }
 }
 
