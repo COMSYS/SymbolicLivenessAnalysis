@@ -47,13 +47,15 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
   if(!allocasInCurrentStackFrame)
     allocasInCurrentStackFrame = true;
 
+  ConstantExpr *constantBase = dyn_cast<ConstantExpr>(base);
+
   for(std::uint64_t offset = 0; offset < os.size; offset++) {
     // add base address to sha1 hash
-    if(ConstantExpr *constant = dyn_cast<ConstantExpr>(base)) {
+    if(constantBase) {
       // concrete address
-      assert(constant->getWidth() <= 64 &&
+      assert(constantBase->getWidth() <= 64 &&
              "address greater than 64 bit!");
-      std::uint64_t address = constant->getZExtValue(64);
+      std::uint64_t address = constantBase->getZExtValue(64);
       addUint64ToHash(sha1, address);
     } else {
       // symbolic address
