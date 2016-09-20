@@ -23,6 +23,7 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
+  sha1.update_single(1);
   addUint64ToHash(sha1, mo.address);
   addUint64ToHash(sha1, mo.size);
 
@@ -53,12 +54,14 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
     // add base address to sha1 hash
     if(constantBase) {
       // concrete address
+      sha1.update_single(2);
       assert(constantBase->getWidth() <= 64 &&
              "address greater than 64 bit!");
       std::uint64_t address = constantBase->getZExtValue(64);
       addUint64ToHash(sha1, address);
     } else {
       // symbolic address
+      sha1.update_single(3);
       addExprStringToHash(sha1, base);
     }
 
@@ -73,6 +76,7 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
     ref<Expr> valExpr = os.read8(offset);
     if(ConstantExpr *constant = dyn_cast<ConstantExpr>(valExpr)) {
       // concrete value
+      sha1.update_single(0);
       std::uint8_t value = constant->getZExtValue(8);
       sha1.update_single(value);
       #ifdef MEMORYSTATE_DEBUG
@@ -80,6 +84,7 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
       #endif
     } else {
       // symbolic value
+      sha1.update_single(1);
       addExprStringToHash(sha1, valExpr);
       #ifdef MEMORYSTATE_DEBUG
         std::cout << ExprString(valExpr);
@@ -102,6 +107,7 @@ void MemoryState::registerConstraint(ref<Expr> condition) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
+  sha1.update_single(4);
   addExprStringToHash(sha1, condition);
   sha1.store_result(hashDigest.begin(), hashDigest.end());
   xorStateHash(hashDigest);
@@ -116,6 +122,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
+  sha1.update_single(5);
   addUint64ToHash(sha1, reinterpret_cast<std::intptr_t>(target));
 
   if(ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
@@ -142,6 +149,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index, ref<Expr
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
+  sha1.update_single(6);
   addUint64ToHash(sha1, reinterpret_cast<std::intptr_t>(kf));
   addUint64ToHash(sha1, index);
 
