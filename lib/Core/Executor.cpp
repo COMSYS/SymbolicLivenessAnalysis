@@ -1030,6 +1030,7 @@ void Executor::bindLocal(KInstruction *target, ExecutionState &state,
                          ref<Expr> value) {
   ref<Expr> dest = getDestCell(state, target).value;
   if(!dest.isNull()) {
+    // unregister previous value to avoid cancellation
     state.memoryState.unregisterLocal(target, dest);
   }
   state.memoryState.registerLocal(target, value);
@@ -1040,7 +1041,7 @@ void Executor::bindArgument(KFunction *kf, unsigned index,
                             ExecutionState &state, ref<Expr> value) {
   assert(getArgumentCell(state, kf, index).value.isNull() &&
          "argument has previouly been set!");
-  // no need to unregister argument (can only be set once)
+  // no need to unregister argument (can only be set once within the same stack frame)
   state.memoryState.registerArgument(kf, index, value);
   getArgumentCell(state, kf, index).value = value;
 }
@@ -3226,7 +3227,7 @@ void Executor::executeFree(ExecutionState &state,
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
-        state.memoryState.registerDeallocation(*mo);
+        it->second->memoryState.registerDeallocation(*mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, Expr::createPointer(0));
@@ -3319,6 +3320,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+          // unregister previous value to avoid cancellation
           state.memoryState.unregisterWrite(address, *mo, *wos);
           wos->write(offset, value);
           state.memoryState.registerWrite(address, *mo, *wos);
@@ -3364,6 +3366,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
+          // unregister previous value to avoid cancellation
           state.memoryState.unregisterWrite(address, *mo, *wos);
           wos->write(mo->getOffsetExpr(address), value);
           state.memoryState.registerWrite(address, *mo, *wos);
