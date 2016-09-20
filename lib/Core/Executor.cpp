@@ -3124,7 +3124,9 @@ void Executor::executeAlloc(ExecutionState &state,
         unsigned count = std::min(reallocFrom->size, os->size);
         for (unsigned i=0; i<count; i++)
           os->write(i, reallocFrom->read8(i));
-        state.addressSpace.unbindObject(reallocFrom->getObject());
+        const MemoryObject *reallocatedObject = reallocFrom->getObject();
+        state.memoryState.registerDeallocation(*reallocatedObject);
+        state.addressSpace.unbindObject(reallocatedObject);
       }
     }
   } else {
