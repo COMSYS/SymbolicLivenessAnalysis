@@ -3114,6 +3114,7 @@ void Executor::executeAlloc(ExecutionState &state,
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
         os->initializeToZero();
+        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
       } else {
         os->initializeToRandom();
       }
