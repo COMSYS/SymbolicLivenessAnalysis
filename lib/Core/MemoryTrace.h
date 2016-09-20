@@ -67,7 +67,7 @@ public:
     } else {
       std::vector<StackFrameEntry> tmpFrames = stackFrames;
       std::cout << "TOP OF MemoryTrace STACK" << std::endl;
-      for(std::reverse_iterator<std::vector<MemoryTraceEntry>::iterator> it = stack.rbegin(); it != stack.rend(); ++it) {
+      for(stack_iter it = stack.rbegin(); it != stack.rend(); ++it) {
         const MemoryTraceEntry &entry = *it;
         const InstructionInfo &ii = *entry.inst->info;
         if(!tmpFrames.empty()) {
