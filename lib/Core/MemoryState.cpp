@@ -24,11 +24,13 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   std::array<std::uint8_t, 20> hashDigest;
 
   addUint64ToHash(sha1, mo.address);
+  addUint64ToHash(sha1, mo.size);
+
   sha1.store_result(hashDigest.begin(), hashDigest.end());
   xorStateHash(hashDigest);
 
   #ifdef MEMORYSTATE_DEBUG
-    std::cout << "MemoryState: processing (de)allocation at address " << std::dec << mo.address;
+    std::cout << "MemoryState: processing (de)allocation at address " << std::dec << mo.address << " of size " << mo.size;
     std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
   #endif
 }
