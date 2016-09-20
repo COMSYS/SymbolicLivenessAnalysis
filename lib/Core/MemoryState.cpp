@@ -141,6 +141,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index, ref<Expr
   std::array<std::uint8_t, 20> hashDigest;
 
   addUint64ToHash(sha1, reinterpret_cast<std::intptr_t>(kf));
+  addUint64ToHash(sha1, index);
 
   if(ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
     // concrete value
