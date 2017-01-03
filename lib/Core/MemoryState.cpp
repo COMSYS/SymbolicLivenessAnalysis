@@ -6,27 +6,29 @@
 
 #include <array>
 #include <cmath>
+
+#ifdef MEMORYSTATE_DEBUG
 #include <iomanip>
 #include <iostream>
-
-#define MEMORYSTATE_DEBUG 1
+#include <sstream>
+#endif
 
 namespace klee {
 
-void MemoryState::printHash() {
-  std::cout << "SHA1: " << Sha1String(shaBuffer) << std::endl;
+void MemoryState::registerExternalFunctionCall() {
+  trace.clear();
 }
 
 void MemoryState::registerAllocation(const MemoryObject &mo) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
-  addUint64ToHash(sha1, &mo.address);
+  addUint64ToHash(sha1, mo.address);
   sha1.store_result(hashDigest.begin(), hashDigest.end());
   xorHash(hashDigest);
 
   #ifdef MEMORYSTATE_DEBUG
-    std::cout << "MemoryState: processing (de)allocation at address " << mo.address;
+    std::cout << "MemoryState: processing (de)allocation at address " << std::dec << mo.address;
     std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
   #endif
 }
@@ -44,15 +46,17 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
     // add base address to sha1 hash
     if(ConstantExpr *constant = dyn_cast<ConstantExpr>(base)) {
       // concrete address
+      assert(constant->getWidth() <= 64 &&
+             "address greater than 64 bit!");
       std::uint64_t address = constant->getZExtValue(64);
-      addUint64ToHash(sha1, &address);
+      addUint64ToHash(sha1, address);
     } else {
       // symbolic address
-      addExprToHash(sha1, base);
+      addExprStringToHash(sha1, base);
     }
 
     // add current offset to hash
-    addUint64ToHash(sha1, &offset);
+    addUint64ToHash(sha1, offset);
 
     #ifdef MEMORYSTATE_DEBUG
       std::cout << "[+" << std::setfill(' ') << std::setw(offsetWidth) << std::dec << offset << "] ";
@@ -69,7 +73,7 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo, const Ob
       #endif
     } else {
       // symbolic value
-      addExprToHash(sha1, valExpr);
+      addExprStringToHash(sha1, valExpr);
       #ifdef MEMORYSTATE_DEBUG
         std::cout << ExprString(valExpr);
       #endif
@@ -91,7 +95,7 @@ void MemoryState::registerConstraint(ref<Expr> condition) {
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
-  addExprToHash(sha1, condition);
+  addExprStringToHash(sha1, condition);
   sha1.store_result(hashDigest.begin(), hashDigest.end());
   xorHash(hashDigest);
 
@@ -101,18 +105,116 @@ void MemoryState::registerConstraint(ref<Expr> condition) {
   #endif
 }
 
-void MemoryState::addUint64ToHash(util::SHA1 &sha1, const std::uint64_t *value) {
-  sha1.update_single(static_cast<std::uint8_t>(*value >> 56));
-  sha1.update_single(static_cast<std::uint8_t>(*value >> 48));
-  sha1.update_single(static_cast<std::uint8_t>(*value >> 40));
-  sha1.update_single(static_cast<std::uint8_t>(*value >> 32));
-  sha1.update_single(static_cast<std::uint8_t>(*value >> 24));
-  sha1.update_single(static_cast<std::uint8_t>(*value >> 16));
-  sha1.update_single(static_cast<std::uint8_t>(*value >>  8));
-  sha1.update_single(static_cast<std::uint8_t>(*value >>  0));
+void MemoryState::registerLocal(KInstruction *target, ref<Expr> value) {
+  util::SHA1 sha1;
+  std::array<std::uint8_t, 20> hashDigest;
+
+  addUint64ToHash(sha1, reinterpret_cast<std::intptr_t>(target));
+
+  if(ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
+    // concrete value
+    addConstantExprToHash(sha1, *constant);
+  } else {
+    // symbolic value
+    addExprStringToHash(sha1, value);
+  }
+
+    // TODO: Stackframe ?????
+
+    //TODO: only registerLocal if it is not a load instruction?
+
+  sha1.store_result(hashDigest.begin(), hashDigest.end());
+  xorHash(hashDigest);
+
+  #ifdef MEMORYSTATE_DEBUG
+    std::cout << "MemoryState: adding local " << index
+        << " to instruction " << reinterpret_cast<std::intptr_t>(target)
+        << ": " << ExprString(value) << std::endl;
+    std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
+  #endif
 }
 
-void MemoryState::addExprToHash(util::SHA1 &sha1, ref<Expr> expr) {
+void MemoryState::registerArgument(KFunction *kf, unsigned index, ref<Expr> value) {
+  util::SHA1 sha1;
+  std::array<std::uint8_t, 20> hashDigest;
+
+  addUint64ToHash(sha1, reinterpret_cast<std::intptr_t>(kf));
+
+  if(ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
+    // concrete value
+    addConstantExprToHash(sha1, *constant);
+  } else {
+    // symbolic value
+    addExprStringToHash(sha1, value);
+  }
+
+    // TODO: Stackframe ?????
+
+  sha1.store_result(hashDigest.begin(), hashDigest.end());
+  xorHash(hashDigest);
+
+  #ifdef MEMORYSTATE_DEBUG
+    std::cout << "MemoryState: adding argument " << index
+        << " to function " << reinterpret_cast<std::intptr_t>(kf)
+        << ": " << ExprString(value) << std::endl;
+    std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
+  #endif
+}
+
+
+void MemoryState::registerBasicBlock(KInstruction *inst, bool newStackFrame) {
+  #ifdef MEMORYSTATE_DEBUG
+  std::cout << "MemoryState: BASICBLOCK\n";
+  #endif
+
+  trace.registerBasicBlock(inst, shaBuffer, newStackFrame);
+}
+
+bool MemoryState::findLoop() {
+  bool result = trace.findLoop();
+
+  #ifdef MEMORYTRACE_DEBUG
+  if(result) {
+    trace.debugStack();
+  }
+  #endif
+
+  return result;
+}
+
+void MemoryState::registerPopFrame() {
+  #ifdef MEMORYSTATE_DEBUG
+  std::cout << "MemoryState: POPFRAME\n";
+  #endif
+
+  trace.popFrame();
+}
+
+void MemoryState::addUint64ToHash(util::SHA1 &sha1, const std::uint64_t value) {
+  sha1.update_single(static_cast<std::uint8_t>(value >> 56));
+  sha1.update_single(static_cast<std::uint8_t>(value >> 48));
+  sha1.update_single(static_cast<std::uint8_t>(value >> 40));
+  sha1.update_single(static_cast<std::uint8_t>(value >> 32));
+  sha1.update_single(static_cast<std::uint8_t>(value >> 24));
+  sha1.update_single(static_cast<std::uint8_t>(value >> 16));
+  sha1.update_single(static_cast<std::uint8_t>(value >>  8));
+  sha1.update_single(static_cast<std::uint8_t>(value >>  0));
+}
+
+void MemoryState::addConstantExprToHash(util::SHA1 &sha1, const ConstantExpr &expr) {
+  if(expr.getWidth() <= 64) {
+    std::uint64_t constantValue = expr.getZExtValue(64);
+    addUint64ToHash(sha1, constantValue);
+  } else {
+    const llvm::APInt& value = expr.getAPValue();
+    for(std::size_t i = 0; i != value.getNumWords(); i++) {
+      std::uint64_t word = value.getRawData()[i];
+      addUint64ToHash(sha1, word);
+    }
+  }
+}
+
+void MemoryState::addExprStringToHash(util::SHA1 &sha1, ref<Expr> expr) {
   std::string str;
   llvm::raw_string_ostream ostream(str);
   expr->print(ostream);
@@ -134,13 +236,15 @@ std::string MemoryState::ExprString(ref<Expr> expr) {
   return result;
 }
 
-std::string MemoryState::Sha1String(std::array<std::uint8_t, 20> &buffer) {
+#ifdef MEMORYSTATE_DEBUG
+std::string MemoryState::Sha1String(const std::array<std::uint8_t, 20> &buffer) {
   std::stringstream result;
-  for (std::array<std::uint8_t, 20>::iterator iter = buffer.begin(); iter != buffer.end(); ++iter) {
+  for (std::array<std::uint8_t, 20>::const_iterator iter = buffer.cbegin(); iter != buffer.cend(); ++iter) {
       result << std::hex << std::setfill('0') << std::setw(2);
       result << static_cast<unsigned int>(*iter);
   }
   return result.str();
 }
+#endif
 
 }

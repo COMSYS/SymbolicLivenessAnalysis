@@ -93,11 +93,9 @@
 #include <errno.h>
 #include <cxxabi.h>
 
+
 using namespace llvm;
 using namespace klee;
-
-
-
 
 
 namespace {
@@ -1030,11 +1028,20 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
 
 void Executor::bindLocal(KInstruction *target, ExecutionState &state, 
                          ref<Expr> value) {
+  ref<Expr> dest = getDestCell(state, target).value;
+  if(!dest.isNull()) {
+    state.memoryState.unregisterLocal(target, dest);
+  }
+  state.memoryState.registerLocal(target, value);
   getDestCell(state, target).value = value;
 }
 
 void Executor::bindArgument(KFunction *kf, unsigned index, 
                             ExecutionState &state, ref<Expr> value) {
+  assert(getArgumentCell(state, kf, index).value.isNull() &&
+         "argument has previouly been set!");
+  // no need to unregister argument (can only be set once)
+  state.memoryState.registerArgument(kf, index, value);
   getArgumentCell(state, kf, index).value = value;
 }
 
@@ -1257,6 +1264,12 @@ void Executor::executeCall(ExecutionState &state,
     KFunction *kf = kmodule->functionMap[f];
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
+    state.memoryState.registerBasicBlock(state.pc, true);
+    if(state.memoryState.findLoop()) {
+      terminateStateOnError(state,
+        "infinite loop",
+        "infty.err");
+    }
 
     if (statsTracker)
       statsTracker->framePushed(state, &state.stack[state.stack.size()-2]);
@@ -1364,7 +1377,7 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
   //
   // With that done we simply set an index in the state so that PHI
   // instructions know which argument to eval, set the pc, and continue.
-  
+
   // XXX this lookup has to go ?
   KFunction *kf = state.stack.back().kf;
   unsigned entry = kf->basicBlockEntry[dst];
@@ -1372,6 +1385,12 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
   if (state.pc->inst->getOpcode() == Instruction::PHI) {
     PHINode *first = static_cast<PHINode*>(state.pc->inst);
     state.incomingBBIndex = first->getBasicBlockIndex(src);
+  }
+  state.memoryState.registerBasicBlock(state.pc);
+  if(state.memoryState.findLoop()) {
+    terminateStateOnError(state,
+      "infinite loop",
+      "infty.err");
   }
 }
 
@@ -1440,6 +1459,7 @@ static inline const llvm::fltSemantics * fpWidthToSemantics(unsigned width) {
 
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
+
   switch (i->getOpcode()) {
     // Control flow
   case Instruction::Ret: {
@@ -1458,6 +1478,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       terminateStateOnExit(state);
     } else {
       state.popFrame();
+      state.memoryState.registerPopFrame();
 
       if (statsTracker)
         statsTracker->framePopped(state);
@@ -1467,6 +1488,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       } else {
         state.pc = kcaller;
         ++state.pc;
+        state.memoryState.registerBasicBlock(state.pc);
+        if(state.memoryState.findLoop()) {
+          terminateStateOnError(state,
+            "infinite loop",
+            "infty.err");
+        }
       }
 
       if (!isVoidReturn) {
@@ -2929,10 +2956,16 @@ void Executor::callExternalFunction(ExecutionState &state,
                                     KInstruction *target,
                                     Function *function,
                                     std::vector< ref<Expr> > &arguments) {
+
+
   // check if specialFunctionHandler wants it
   if (specialFunctionHandler->handle(state, function, target, arguments))
     return;
-  
+
+  if (!okExternals.count(function->getName())) {
+    state.memoryState.registerExternalFunctionCall();
+  }
+
   if (NoExternals && !okExternals.count(function->getName())) {
     klee_warning("Disallowed call to external function: %s\n",
                function->getName().str().c_str());
@@ -3285,7 +3318,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
-          state.memoryState.registerWrite(address, *mo, *wos);
+          state.memoryState.unregisterWrite(address, *mo, *wos);
           wos->write(offset, value);
           state.memoryState.registerWrite(address, *mo, *wos);
         }          
@@ -3330,7 +3363,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
-          state.memoryState.registerWrite(address, *mo, *wos);
+          state.memoryState.unregisterWrite(address, *mo, *wos);
           wos->write(mo->getOffsetExpr(address), value);
           state.memoryState.registerWrite(address, *mo, *wos);
         }
@@ -3430,6 +3463,8 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
     }
   }
 }
+
+
 
 /***/
 

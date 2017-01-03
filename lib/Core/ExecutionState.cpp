@@ -146,7 +146,8 @@ void ExecutionState::popFrame() {
   StackFrame &sf = stack.back();
   for (std::vector<const MemoryObject*>::iterator it = sf.allocas.begin(), 
          ie = sf.allocas.end(); it != ie; ++it) {
-    if(stack.size() > 1) { // do not register deallocation of locals in initial stack frame
+    if(stack.size() > 1) {
+      // do not register deallocation of locals in initial stack frame (popFrame is called twice)
       memoryState.registerDeallocation(**it);
     }
     addressSpace.unbindObject(*it);
