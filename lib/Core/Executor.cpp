@@ -265,6 +265,7 @@ namespace {
 		    clEnumValN(Executor::Exec, "Exec", "Trying to execute an unexpected instruction"),
 		    clEnumValN(Executor::External, "External", "External objects referenced"),
 		    clEnumValN(Executor::Free, "Free", "Freeing invalid memory"),
+		    clEnumValN(Executor::InfiniteLoop, "InfiniteLoop", "Infinite loop encountered"),
 		    clEnumValN(Executor::Model, "Model", "Memory model limit hit"),
 		    clEnumValN(Executor::Overflow, "Overflow", "An overflow occurred"),
 		    clEnumValN(Executor::Ptr, "Ptr", "Pointer error"),
@@ -313,6 +314,7 @@ const char *Executor::TerminateReasonNames[] = {
   [ Exec ] = "exec",
   [ External ] = "external",
   [ Free ] = "free",
+  [ InfiniteLoop ] = "infty",
   [ Model ] = "model",
   [ Overflow ] = "overflow",
   [ Ptr ] = "ptr",
@@ -1268,9 +1270,8 @@ void Executor::executeCall(ExecutionState &state,
     state.memoryState.registerPushFrame();
     state.memoryState.registerBasicBlock(state.pc);
     if(state.memoryState.findLoop()) {
-      terminateStateOnError(state,
-        "infinite loop",
-        "infty.err");
+      terminateStateOnError(state, "infinite loop",
+                            InfiniteLoop);
     }
 
     if (statsTracker)
@@ -1390,9 +1391,8 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
   }
   state.memoryState.registerBasicBlock(state.pc);
   if(state.memoryState.findLoop()) {
-    terminateStateOnError(state,
-      "infinite loop",
-      "infty.err");
+    terminateStateOnError(state, "infinite loop",
+                          InfiniteLoop);
   }
 }
 
@@ -1492,9 +1492,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         ++state.pc;
         state.memoryState.registerBasicBlock(state.pc);
         if(state.memoryState.findLoop()) {
-          terminateStateOnError(state,
-            "infinite loop",
-            "infty.err");
+          terminateStateOnError(state, "infinite loop",
+                                InfiniteLoop);
         }
       }
 

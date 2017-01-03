@@ -105,6 +105,7 @@ public:
     Exec,
     External,
     Free,
+    InfiniteLoop,
     Model,
     Overflow,
     Ptr,
