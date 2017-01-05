@@ -23,9 +23,9 @@ private:
   MemoryTrace trace;
   bool allocasInCurrentStackFrame = false;
 
-  #ifdef MEMORYSTATE_DEBUG
+#ifdef MEMORYSTATE_DEBUG
   static std::string Sha1String(const std::array<std::uint8_t, 20> &buffer);
-  #endif
+#endif
 
   static std::string ExprString(ref<Expr> expr);
   void addUint64ToHash(util::SHA1 &sha1, const std::uint64_t address);
@@ -36,22 +36,24 @@ private:
 
 public:
   MemoryState() = default;
-  MemoryState(const MemoryState&) = default;
+  MemoryState(const MemoryState &) = default;
 
   void registerAllocation(const MemoryObject &mo);
   void registerDeallocation(const MemoryObject &mo) {
-    #ifdef MEMORYSTATE_DEBUG
+#ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: DEALLOCATION\n";
-    #endif
+#endif
 
     registerAllocation(mo);
   }
 
-  void registerWrite(ref<Expr> base, const MemoryObject &mo, const ObjectState &os);
-  void unregisterWrite(ref<Expr> base, const MemoryObject &mo, const ObjectState &os) {
-    #ifdef MEMORYSTATE_DEBUG
+  void registerWrite(ref<Expr> base, const MemoryObject &mo,
+                     const ObjectState &os);
+  void unregisterWrite(ref<Expr> base, const MemoryObject &mo,
+                       const ObjectState &os) {
+#ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: UNREGISTER\n";
-    #endif
+#endif
 
     registerWrite(base, mo, os);
   }
@@ -60,9 +62,9 @@ public:
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-    #ifdef MEMORYSTATE_DEBUG
+#ifdef MEMORYSTATE_DEBUG
     std::cout << "MemoryState: UNREGISTER\n";
-    #endif
+#endif
 
     registerLocal(target, value);
   }
