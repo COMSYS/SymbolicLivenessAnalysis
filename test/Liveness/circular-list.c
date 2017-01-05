@@ -4,13 +4,13 @@
 // RUN: %llvmgcc %s -emit-llvm -O3 -g -c -o %t-O3.bc
 
 // RUN: rm -rf %t-O0.klee-out
-// RUN: %klee -output-dir=%t-O0.klee-out %t-O0.bc 2>&1 | FileCheck %s
+// RUN: %klee -output-dir=%t-O0.klee-out -detect-infinite-loops %t-O0.bc 2>&1 | FileCheck %s
 // RUN: rm -rf %t-O1.klee-out
-// RUN: %klee -output-dir=%t-O1.klee-out %t-O1.bc 2>&1 | FileCheck %s
+// RUN: %klee -output-dir=%t-O1.klee-out -detect-infinite-loops %t-O1.bc 2>&1 | FileCheck %s
 // RUN: rm -rf %t-O2.klee-out
-// RUN: %klee -output-dir=%t-O2.klee-out %t-O2.bc 2>&1 | FileCheck %s
+// RUN: %klee -output-dir=%t-O2.klee-out -detect-infinite-loops %t-O2.bc 2>&1 | FileCheck %s
 // RUN: rm -rf %t-O3.klee-out
-// RUN: %klee -output-dir=%t-O3.klee-out %t-O3.bc 2>&1 | FileCheck %s
+// RUN: %klee -output-dir=%t-O3.klee-out -detect-infinite-loops %t-O3.bc 2>&1 | FileCheck %s
 
 #include <klee/klee.h>
 
