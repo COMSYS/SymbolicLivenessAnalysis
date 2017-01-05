@@ -16,10 +16,10 @@
 // RUN: %klee -output-dir=%t-O3.klee-out -detect-infinite-loops %t-O3.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O3.klee-out/test000001.infty.err
 
-int main() {
-    int x = 1;
-    // CHECK: infinite loop
-    while(x != 0) {
-        x = -x;
-    }
+int main(void) {
+  int x = 1;
+  // CHECK: infinite loop
+  while (x != 0) {
+    x = -x;
+  }
 }
