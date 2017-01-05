@@ -300,6 +300,11 @@ namespace {
   MaxMemoryInhibit("max-memory-inhibit",
             cl::desc("Inhibit forking at memory cap (vs. random terminate) (default=on)"),
             cl::init(true));
+
+  cl::opt<bool>
+  DetectInfiniteLoops("detect-infinite-loops",
+            cl::desc("Enable detection of infinite loops (default=false)"),
+            cl::init(false));
 }
 
 
@@ -1003,7 +1008,9 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   }
 
   state.addConstraint(condition);
-  state.memoryState.registerConstraint(condition);
+  if (DetectInfiniteLoops) {
+    state.memoryState.registerConstraint(condition);
+  }
   if (ivcEnabled)
     doImpliedValueConcretization(state, condition, 
                                  ConstantExpr::alloc(1, Expr::Bool));
@@ -1031,11 +1038,13 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
 void Executor::bindLocal(KInstruction *target, ExecutionState &state, 
                          ref<Expr> value) {
   ref<Expr> dest = getDestCell(state, target).value;
-  if(!dest.isNull()) {
-    // unregister previous value to avoid cancellation
-    state.memoryState.unregisterLocal(target, dest);
+  if (DetectInfiniteLoops) {
+    if (!dest.isNull()) {
+      // unregister previous value to avoid cancellation
+      state.memoryState.unregisterLocal(target, dest);
+    }
+    state.memoryState.registerLocal(target, value);
   }
-  state.memoryState.registerLocal(target, value);
   getDestCell(state, target).value = value;
 }
 
@@ -1043,8 +1052,10 @@ void Executor::bindArgument(KFunction *kf, unsigned index,
                             ExecutionState &state, ref<Expr> value) {
   assert(getArgumentCell(state, kf, index).value.isNull() &&
          "argument has previouly been set!");
-  // no need to unregister argument (can only be set once within the same stack frame)
-  state.memoryState.registerArgument(kf, index, value);
+  if (DetectInfiniteLoops) {
+    // no need to unregister argument (can only be set once within the same stack frame)
+    state.memoryState.registerArgument(kf, index, value);
+  }
   getArgumentCell(state, kf, index).value = value;
 }
 
@@ -1267,11 +1278,13 @@ void Executor::executeCall(ExecutionState &state,
     KFunction *kf = kmodule->functionMap[f];
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
-    state.memoryState.registerPushFrame();
-    state.memoryState.registerBasicBlock(state.pc);
-    if(state.memoryState.findLoop()) {
-      terminateStateOnError(state, "infinite loop",
-                            InfiniteLoop);
+    if (DetectInfiniteLoops) {
+      state.memoryState.registerPushFrame();
+      state.memoryState.registerBasicBlock(state.pc);
+      if (state.memoryState.findLoop()) {
+        terminateStateOnError(state, "infinite loop",
+                              InfiniteLoop);
+      }
     }
 
     if (statsTracker)
@@ -1389,10 +1402,12 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     PHINode *first = static_cast<PHINode*>(state.pc->inst);
     state.incomingBBIndex = first->getBasicBlockIndex(src);
   }
-  state.memoryState.registerBasicBlock(state.pc);
-  if(state.memoryState.findLoop()) {
-    terminateStateOnError(state, "infinite loop",
-                          InfiniteLoop);
+  if (DetectInfiniteLoops) {
+    state.memoryState.registerBasicBlock(state.pc);
+    if (state.memoryState.findLoop()) {
+      terminateStateOnError(state, "infinite loop",
+                            InfiniteLoop);
+    }
   }
 }
 
@@ -1480,7 +1495,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       terminateStateOnExit(state);
     } else {
       state.popFrame();
-      state.memoryState.registerPopFrame();
+      if (DetectInfiniteLoops) {
+        state.memoryState.registerPopFrame();
+      }
 
       if (statsTracker)
         statsTracker->framePopped(state);
@@ -1490,10 +1507,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       } else {
         state.pc = kcaller;
         ++state.pc;
-        state.memoryState.registerBasicBlock(state.pc);
-        if(state.memoryState.findLoop()) {
-          terminateStateOnError(state, "infinite loop",
-                                InfiniteLoop);
+        if (DetectInfiniteLoops) {
+          state.memoryState.registerBasicBlock(state.pc);
+          if (state.memoryState.findLoop()) {
+            terminateStateOnError(state, "infinite loop",
+                                  InfiniteLoop);
+          }
         }
       }
 
@@ -2963,7 +2982,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   if (specialFunctionHandler->handle(state, function, target, arguments))
     return;
 
-  if (!okExternals.count(function->getName())) {
+  if (DetectInfiniteLoops && !okExternals.count(function->getName())) {
     state.memoryState.registerExternalFunctionCall();
   }
 
@@ -3109,11 +3128,15 @@ void Executor::executeAlloc(ExecutionState &state,
       bindLocal(target, state, 
                 ConstantExpr::alloc(0, Context::get().getPointerWidth()));
     } else {
-      state.memoryState.registerAllocation(*mo);
+      if (DetectInfiniteLoops) {
+        state.memoryState.registerAllocation(*mo);
+      }
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
         os->initializeToZero();
-        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
+        if (DetectInfiniteLoops) {
+          state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
+        }
       } else {
         os->initializeToRandom();
       }
@@ -3124,7 +3147,9 @@ void Executor::executeAlloc(ExecutionState &state,
         for (unsigned i=0; i<count; i++)
           os->write(i, reallocFrom->read8(i));
         const MemoryObject *reallocatedObject = reallocFrom->getObject();
-        state.memoryState.registerDeallocation(*reallocatedObject);
+        if (DetectInfiniteLoops) {
+          state.memoryState.registerDeallocation(*reallocatedObject);
+        }
         state.addressSpace.unbindObject(reallocatedObject);
       }
     }
@@ -3322,10 +3347,14 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
-          // unregister previous value to avoid cancellation
-          state.memoryState.unregisterWrite(address, *mo, *wos);
+          if (DetectInfiniteLoops) {
+            // unregister previous value to avoid cancellation
+            state.memoryState.unregisterWrite(address, *mo, *wos);
+          }
           wos->write(offset, value);
-          state.memoryState.registerWrite(address, *mo, *wos);
+          if (DetectInfiniteLoops) {
+            state.memoryState.registerWrite(address, *mo, *wos);
+          }
         }          
       } else {
         ref<Expr> result = os->read(offset, type);
@@ -3368,10 +3397,14 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
-          // unregister previous value to avoid cancellation
-          state.memoryState.unregisterWrite(address, *mo, *wos);
+          if (DetectInfiniteLoops) {
+            // unregister previous value to avoid cancellation
+            state.memoryState.unregisterWrite(address, *mo, *wos);
+          }
           wos->write(mo->getOffsetExpr(address), value);
-          state.memoryState.registerWrite(address, *mo, *wos);
+          if (DetectInfiniteLoops) {
+            state.memoryState.registerWrite(address, *mo, *wos);
+          }
         }
       } else {
         ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
