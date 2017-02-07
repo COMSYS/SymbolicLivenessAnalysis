@@ -20,6 +20,8 @@ klee_add_component(kleeCore
   ImpliedValue.cpp
   Memory.cpp
   MemoryManager.cpp
+  MemoryState.cpp
+  MemoryTrace.cpp
   PTree.cpp
   Searcher.cpp
   SeedInfo.cpp
