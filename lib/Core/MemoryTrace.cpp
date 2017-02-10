@@ -1,4 +1,13 @@
+#include "DebugInfiniteLoopDetection.h"
 #include "MemoryTrace.h"
+
+#include "klee/Internal/Module/InstructionInfoTable.h"
+
+#include "llvm/Support/raw_ostream.h"
+
+#include <iomanip>
+#include <iterator>
+#include <sstream>
 
 namespace klee {
 
@@ -16,22 +25,22 @@ void MemoryTrace::registerEndOfStackFrame(
 }
 
 void MemoryTrace::clear() {
-#ifdef MEMORYTRACE_DEBUG
-  debugStack();
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+    debugStack();
+  }
 
   stack.clear();
   stackFrames.clear();
 
-#ifdef MEMORYTRACE_DEBUG
-  debugStack();
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+    debugStack();
+  }
 }
 
 std::array<std::uint8_t, 20> MemoryTrace::popFrame() {
-#ifdef MEMORYTRACE_DEBUG
-  debugStack();
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+    debugStack();
+  }
 
   if (!stackFrames.empty()) {
     StackFrameEntry &sfe = stackFrames.back();
@@ -50,12 +59,12 @@ std::array<std::uint8_t, 20> MemoryTrace::popFrame() {
     return hashDifference;
   }
 
-  return {};
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+    llvm::errs() << "Popping StackFrame\n";
+    debugStack();
+  }
 
-#ifdef MEMORYTRACE_DEBUG
-  std::cout << "Popping StackFrame" << std::endl;
-  debugStack();
-#endif
+  return {};
 }
 
 bool MemoryTrace::findLoop() {
@@ -82,10 +91,10 @@ bool MemoryTrace::findLoop() {
       if (upperIt == doubleIt) {
         // all (lowerIt-upperIt) predecessors are the same => loop found
 
-#ifdef MEMORYTRACE_DEBUG
-        std::cout << std::dec << "MemoryTrace: Loop consisting of "
-                  << (lowerIt - upperIt) << " BasicBlocks\n";
-#endif
+        if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+          llvm::errs() << "MemoryTrace: Loop consisting of "
+                       << (lowerIt - upperIt) << " BasicBlocks\n";
+        }
 
         return true;
       } else {
@@ -97,5 +106,40 @@ bool MemoryTrace::findLoop() {
   }
 
   return false;
+}
+
+
+void MemoryTrace::debugStack() {
+  if (stack.empty()) {
+    llvm::errs() << "MemoryTrace is empty\n";
+  } else {
+    std::vector<StackFrameEntry> tmpFrames = stackFrames;
+    llvm::errs() << "TOP OF MemoryTrace STACK\n";
+    for (stack_iter it = stack.rbegin(); it != stack.rend(); ++it) {
+      const MemoryTraceEntry &entry = *it;
+      const InstructionInfo &ii = *entry.inst->info;
+      if (!tmpFrames.empty()) {
+        if ((std::size_t)(stack.rend() - it) == tmpFrames.back().index) {
+          llvm::errs() << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/"
+                       << stackFrames.size() << "\n";
+          tmpFrames.pop_back();
+        }
+      }
+      llvm::errs() << entry.inst << " (" << ii.file << ":" << ii.line << ":"
+                   << ii.id << "): " << Sha1String(entry.hash) << "\n";
+    }
+    llvm::errs() << "BOTTOM OF MemoryTrace STACK\n";
+  }
+}
+
+std::string
+MemoryTrace::Sha1String(const std::array<std::uint8_t, 20> &buffer) {
+  std::stringstream result;
+  for (std::array<std::uint8_t, 20>::const_iterator iter = buffer.cbegin();
+       iter != buffer.cend(); ++iter) {
+    result << std::hex << std::setfill('0') << std::setw(2);
+    result << static_cast<unsigned int>(*iter);
+  }
+  return result.str();
 }
 }

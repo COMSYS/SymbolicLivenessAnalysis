@@ -1,17 +1,14 @@
 #include "AddressSpace.h"
+#include "DebugInfiniteLoopDetection.h"
 #include "Memory.h"
 #include "MemoryState.h"
 
-#include "klee/ExecutionState.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <cmath>
-
-#ifdef MEMORYSTATE_DEBUG
 #include <iomanip>
-#include <iostream>
 #include <sstream>
-#endif
 
 namespace klee {
 
@@ -31,11 +28,11 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   sha1.store_result(hashDigest.begin(), hashDigest.end());
   xorStateHash(hashDigest);
 
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: processing (de)allocation at address " << std::dec
-            << mo.address << " of size " << mo.size;
-  std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: processing (de)allocation at address "
+                 << mo.address << " of size " << mo.size;
+    llvm::errs() << " [sha1: " << Sha1String(hashDigest) << "]\n";
+  }
 }
 
 void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
@@ -43,11 +40,10 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
   util::SHA1 sha1;
   std::array<std::uint8_t, 20> hashDigest;
 
-#ifdef MEMORYSTATE_DEBUG
-  std::uint8_t offsetWidth = static_cast<std::uint8_t>(ceil(log10(os.size)));
-  std::cout << "MemoryState: processing ObjectState at base address "
-            << ExprString(base) << std::endl;
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: processing ObjectState at base address "
+                 << ExprString(base) << "\n";
+  }
 
   if (!allocasInCurrentStackFrame)
     allocasInCurrentStackFrame = true;
@@ -71,10 +67,9 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
     // add current offset to hash
     addUint64ToHash(sha1, offset);
 
-#ifdef MEMORYSTATE_DEBUG
-    std::cout << "[+" << std::setfill(' ') << std::setw(offsetWidth) << std::dec
-              << offset << "] ";
-#endif
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << "[+" << offset << "] ";
+    }
 
     // add value of byte at offset to hash
     ref<Expr> valExpr = os.read8(offset);
@@ -83,26 +78,26 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
       sha1.update_single(0);
       std::uint8_t value = constant->getZExtValue(8);
       sha1.update_single(value);
-#ifdef MEMORYSTATE_DEBUG
-      std::cout << "0x" << std::uppercase << std::hex << std::setfill('0')
-                << std::setw(2) << (int)value;
-#endif
+      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+        llvm::errs() << "0x";
+        llvm::errs().write_hex((int)value);
+      }
     } else {
       // symbolic value
       sha1.update_single(1);
       addExprStringToHash(sha1, valExpr);
-#ifdef MEMORYSTATE_DEBUG
-      std::cout << ExprString(valExpr);
-#endif
+      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+        llvm::errs() << ExprString(valExpr);
+      }
     }
 
     // compute sha1 hash and xor to existing hash
     sha1.store_result(hashDigest.begin(), hashDigest.end());
     xorStateHash(hashDigest);
 
-#ifdef MEMORYSTATE_DEBUG
-    std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
-#endif
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << " [sha1: " << Sha1String(hashDigest) << "]\n";
+    }
 
     sha1.reset();
   }
@@ -117,10 +112,11 @@ void MemoryState::registerConstraint(ref<Expr> condition) {
   sha1.store_result(hashDigest.begin(), hashDigest.end());
   xorStateHash(hashDigest);
 
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: adding new constraint: " << ExprString(condition);
-  std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: adding new constraint: "
+                 << ExprString(condition)
+                 << " [sha1: " << Sha1String(hashDigest) << "]\n";
+  }
 }
 
 void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
@@ -142,12 +138,12 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
   xorStateHash(hashDigest);
   xorStackFrameHash(hashDigest);
 
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: adding local"
-            << " to instruction " << reinterpret_cast<std::intptr_t>(target)
-            << ": " << ExprString(value) << std::endl;
-  std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: adding local  to instruction "
+                 << reinterpret_cast<std::intptr_t>(target)
+                 << ": " << ExprString(value) << "\n"
+                 << " [sha1: " << Sha1String(hashDigest) << "]\n";
+  }
 }
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
@@ -171,18 +167,18 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
   xorStateHash(hashDigest);
   xorStackFrameHash(hashDigest);
 
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: adding argument " << index << " to function "
-            << reinterpret_cast<std::intptr_t>(kf) << ": " << ExprString(value)
-            << std::endl;
-  std::cout << " [sha1: " << Sha1String(hashDigest) << "]" << std::endl;
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: adding argument " << index << " to function "
+                 << reinterpret_cast<std::intptr_t>(kf) << ": "
+                 << ExprString(value) << "\n"
+                 << " [sha1: " << Sha1String(hashDigest) << "]\n";
+  }
 }
 
 void MemoryState::registerBasicBlock(const KInstruction *inst) {
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: BASICBLOCK\n";
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: BASICBLOCK\n";
+  }
 
   trace.registerBasicBlock(inst, stateHash);
 }
@@ -190,19 +186,19 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
 bool MemoryState::findLoop() {
   bool result = trace.findLoop();
 
-#ifdef MEMORYTRACE_DEBUG
-  if (result) {
-    trace.debugStack();
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+    if (result) {
+      trace.debugStack();
+    }
   }
-#endif
 
   return result;
 }
 
 void MemoryState::registerPushFrame() {
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: PUSHFRAME\n";
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: PUSHFRAME\n";
+  }
 
   trace.registerEndOfStackFrame(stackFrameHash, allocasInCurrentStackFrame);
 
@@ -216,9 +212,9 @@ void MemoryState::registerPushFrame() {
 }
 
 void MemoryState::registerPopFrame() {
-#ifdef MEMORYSTATE_DEBUG
-  std::cout << "MemoryState: POPFRAME\n";
-#endif
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: POPFRAME\n";
+  }
 
   // apply old difference to stateHash
   // to make locals and parameters "visible" again
@@ -279,7 +275,6 @@ std::string MemoryState::ExprString(ref<Expr> expr) {
   return result;
 }
 
-#ifdef MEMORYSTATE_DEBUG
 std::string
 MemoryState::Sha1String(const std::array<std::uint8_t, 20> &buffer) {
   std::stringstream result;
@@ -290,5 +285,5 @@ MemoryState::Sha1String(const std::array<std::uint8_t, 20> &buffer) {
   }
   return result.str();
 }
-#endif
+
 }

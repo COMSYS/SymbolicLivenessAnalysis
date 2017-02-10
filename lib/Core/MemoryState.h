@@ -1,17 +1,15 @@
 #ifndef KLEE_MEMORYSTATE_H
 #define KLEE_MEMORYSTATE_H
 
+#include "DebugInfiniteLoopDetection.h"
 #include "MemoryTrace.h"
+
 #include "klee/Internal/Module/KInstruction.h"
 #include "klee/Internal/Module/KModule.h"
 #include "klee/Internal/Support/SHA1.h"
 
 #include <array>
 #include <cstdint>
-
-#ifdef MEMORYSTATE_DEBUG
-#include <iostream>
-#endif
 
 namespace klee {
 
@@ -23,9 +21,7 @@ private:
   MemoryTrace trace;
   bool allocasInCurrentStackFrame = false;
 
-#ifdef MEMORYSTATE_DEBUG
   static std::string Sha1String(const std::array<std::uint8_t, 20> &buffer);
-#endif
 
   static std::string ExprString(ref<Expr> expr);
   void addUint64ToHash(util::SHA1 &sha1, const std::uint64_t address);
@@ -40,9 +36,9 @@ public:
 
   void registerAllocation(const MemoryObject &mo);
   void registerDeallocation(const MemoryObject &mo) {
-#ifdef MEMORYSTATE_DEBUG
-    std::cout << "MemoryState: DEALLOCATION\n";
-#endif
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << "MemoryState: DEALLOCATION\n";
+    }
 
     registerAllocation(mo);
   }
@@ -51,9 +47,9 @@ public:
                      const ObjectState &os);
   void unregisterWrite(ref<Expr> base, const MemoryObject &mo,
                        const ObjectState &os) {
-#ifdef MEMORYSTATE_DEBUG
-    std::cout << "MemoryState: UNREGISTER\n";
-#endif
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << "MemoryState: UNREGISTER\n";
+    }
 
     registerWrite(base, mo, os);
   }
@@ -62,9 +58,9 @@ public:
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-#ifdef MEMORYSTATE_DEBUG
-    std::cout << "MemoryState: UNREGISTER\n";
-#endif
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << "MemoryState: UNREGISTER\n";
+    }
 
     registerLocal(target, value);
   }
