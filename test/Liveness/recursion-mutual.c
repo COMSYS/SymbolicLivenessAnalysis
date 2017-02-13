@@ -4,7 +4,7 @@
 // RUN: %llvmgcc %s -emit-llvm -O3 -g -c -o %t-O3.bc
 
 // RUN: rm -rf %t-O0.klee-out
-// RUN: %klee -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 %t-O0.bc 2>&1 | not FileCheck %s
+// RUN: %klee -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=1000 %t-O0.bc 2>&1 | FileCheck %s -check-prefix=CHECK_O0
 // RUN: not test -f %t-O0.klee-out/test000001.infty.err
 // RUN: rm -rf %t-O1.klee-out
 // RUN: %klee -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 %t-O1.bc 2>&1 | FileCheck %s
@@ -21,6 +21,7 @@
 int is_odd(int n);
 
 int is_even(int n) {
+  // CHECK_O0: aborting search for infinite loops
   if (n != 0)
     n = is_odd(n + 1); // bug: should be minus instead of plus
   else
