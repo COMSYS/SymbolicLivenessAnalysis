@@ -2,6 +2,7 @@
 #include "MemoryTrace.h"
 
 #include "klee/Internal/Module/InstructionInfoTable.h"
+#include "klee/Internal/Support/ErrorHandling.h"
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -68,39 +69,42 @@ std::array<std::uint8_t, 20> MemoryTrace::popFrame() {
 }
 
 bool MemoryTrace::findLoop() {
+  if(stackFrames.size() > 0) {
+    // current stack frame has always at least one basic block
+    assert(stackFrames.back().index < stack.size() &&
+      "current stack frame is empty");
+  }
+
+  auto stackFramesIt = stackFrames.rbegin();
+  size_t currentStackFrameBoundary = 0;
+  if(stackFramesIt != stackFrames.rend()) {
+    // first index that belongs to current stack frame
+    currentStackFrameBoundary = stackFramesIt->index;
+  }
+
   MemoryTraceEntry &topEntry = stack.back();
+  auto it = stack.rbegin();
+  ++it; // skip first element
+  for (; it != stack.rend(); ++it) {
+    if (topEntry == *it) {
+      // found an entry with same PC and fingerprint
+      return true;
+    }
 
-  stack_iter lowerIt = stack.rbegin();
-  ++lowerIt; // skip first element
-  for (; lowerIt != stack.rend(); ++lowerIt) {
-    // TODO: break loop because at some point its impossible that same sequence can be found twice in stack (break at half?)
-    // TODO: alloca count for each Stack frame: If count > 0, stop search at SF boundary
-    if (topEntry == *lowerIt) {
-      // found an entry with same PC and hash
-      stack_iter doubleIt = lowerIt;
-
-      // compare predecessors
-      stack_iter upperIt = stack.rbegin();
-      for (; upperIt <= doubleIt && lowerIt != stack.rend();
-           ++upperIt, ++lowerIt) {
-        if (*upperIt != *lowerIt) {
-          break;
-        }
-      }
-
-      if (upperIt == doubleIt) {
-        // all (lowerIt-upperIt) predecessors are the same => loop found
-
-        if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
-          llvm::errs() << "MemoryTrace: Loop consisting of "
-                       << (lowerIt - upperIt) << " BasicBlocks\n";
-        }
-
-        return true;
+    size_t index = std::distance(stack.begin(), it.base()) - 1;
+    if(stackFramesIt != stackFrames.rend() &&
+       currentStackFrameBoundary == index) {
+      // entering new stack frame in next iteration
+      if(stackFramesIt->allocas) {
+        // stack frame contained allocas, thus we cannot find any further match
+        klee_warning_once(stack[currentStackFrameBoundary-1].inst,
+          "previous stack frame contains alloca, "
+          "aborting search for infinite loops at this location");
+        return false;
       } else {
-        // reset lowerIt to continue search for
-        // other entry with same PC and hash
-        lowerIt = doubleIt;
+        // find boundary of previous stack frame
+        ++stackFramesIt;
+        currentStackFrameBoundary = stackFramesIt->index;
       }
     }
   }
@@ -115,7 +119,7 @@ void MemoryTrace::debugStack() {
   } else {
     std::vector<StackFrameEntry> tmpFrames = stackFrames;
     llvm::errs() << "TOP OF MemoryTrace STACK\n";
-    for (stack_iter it = stack.rbegin(); it != stack.rend(); ++it) {
+    for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
       const MemoryTraceEntry &entry = *it;
       const InstructionInfo &ii = *entry.inst->info;
       if (!tmpFrames.empty()) {

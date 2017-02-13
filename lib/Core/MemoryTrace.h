@@ -28,8 +28,11 @@ private:
   };
 
   struct StackFrameEntry {
+    // first index in stack that belongs to next stack frame
     std::size_t index;
+    // locals and arguments only visible within this stack frame
     std::array<std::uint8_t, 20> hashDifference;
+    // did this stack frame contain any allocas?
     bool allocas;
 
     StackFrameEntry(std::size_t index,
@@ -43,9 +46,6 @@ private:
 public:
   MemoryTrace() = default;
   MemoryTrace(const MemoryTrace &) = default;
-
-  typedef std::reverse_iterator<std::vector<MemoryTraceEntry>::iterator>
-      stack_iter;
 
   void registerBasicBlock(const KInstruction *instruction,
                           const std::array<std::uint8_t, 20> &hash);
