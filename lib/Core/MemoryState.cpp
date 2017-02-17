@@ -3,6 +3,8 @@
 #include "Memory.h"
 #include "MemoryState.h"
 
+#include "klee/Internal/Module/InstructionInfoTable.h"
+
 #include "llvm/Support/raw_ostream.h"
 
 #include <cmath>
@@ -122,8 +124,10 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
   fingerprint.applyToFingerprintAndDelta();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "MemoryState: adding local  to instruction "
+    const InstructionInfo &ii = *target->info;
+    llvm::errs() << "MemoryState: adding local to instruction "
                  << reinterpret_cast<std::intptr_t>(target)
+                 << " (" << ii.file << ":" << ii.line << ":" << ii.id << ")"
                  << ": " << ExprString(value) << "\n"
                  << " [fingerprint: " << fingerprint.getFingerprintAsString()
                  << "]\n";
@@ -191,12 +195,20 @@ void MemoryState::registerPushFrame() {
 
 void MemoryState::registerPopFrame() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "MemoryState: POPFRAME\n";
+    llvm::errs() << "MemoryState: POPFRAME\n"
+                 << "Fingerprint: " << fingerprint.getFingerprintAsString()
+                 << "\n";
   }
 
   // make locals and parameters "visible" again
   MemoryFingerprint::fingerprint_t delta = trace.popFrame();
   fingerprint.applyDelta(delta);
+
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "reapplying delta: " << fingerprint.getDeltaAsString()
+                 << "\nFingerprint: " << fingerprint.getFingerprintAsString()
+                 << "\n";
+  }
 }
 
 
