@@ -39,7 +39,7 @@ void MemoryTrace::clear() {
   }
 }
 
-MemoryFingerprint::fingerprint_t MemoryTrace::popFrame() {
+std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
     debugStack();
   }
@@ -47,6 +47,7 @@ MemoryFingerprint::fingerprint_t MemoryTrace::popFrame() {
   if (!stackFrames.empty()) {
     StackFrameEntry &sfe = stackFrames.back();
     fingerprint_t fingerprintDelta = sfe.fingerprintDelta;
+    bool allocas = sfe.allocas;
 
     // delete all PCs and fingerprints of BasicBlocks
     // that are part of current stack frame
@@ -58,7 +59,7 @@ MemoryFingerprint::fingerprint_t MemoryTrace::popFrame() {
     // remove topmost stack frame
     stackFrames.pop_back();
 
-    return fingerprintDelta;
+    return std::make_pair(fingerprintDelta, allocas);
   }
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {

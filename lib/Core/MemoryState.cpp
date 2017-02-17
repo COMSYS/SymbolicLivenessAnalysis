@@ -186,7 +186,7 @@ void MemoryState::registerPushFrame() {
 
   trace.registerEndOfStackFrame(fingerprint.getDelta(), allocasInCurrentStackFrame);
 
-  // make locals and parameters "invisible"
+  // make locals and arguments "invisible"
   fingerprint.removeDelta();
 
   // reset stack frame specific information
@@ -200,12 +200,19 @@ void MemoryState::registerPopFrame() {
                  << "\n";
   }
 
-  // make locals and parameters "visible" again
-  MemoryFingerprint::fingerprint_t delta = trace.popFrame();
-  fingerprint.applyDelta(delta);
+  // remove delta (locals and arguments) of stack frame that is to be left
+  fingerprint.removeDelta();
+
+  // make locals and argument "visible" again by
+  // applying delta of stack frame that is to be entered
+  auto previousFrame = trace.popFrame();
+  fingerprint.applyDelta(previousFrame.first);
+
+  allocasInCurrentStackFrame = previousFrame.second;
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "reapplying delta: " << fingerprint.getDeltaAsString()
+                 << "\nAllocas: " << allocasInCurrentStackFrame
                  << "\nFingerprint: " << fingerprint.getFingerprintAsString()
                  << "\n";
   }

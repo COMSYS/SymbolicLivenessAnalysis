@@ -3,6 +3,7 @@
 
 #include "klee/Internal/Module/KInstruction.h"
 
+#include <utility>
 #include <vector>
 
 namespace klee {
@@ -51,7 +52,7 @@ public:
   void registerBasicBlock(const KInstruction *instruction,
                           const fingerprint_t &fingerprint);
   void registerEndOfStackFrame(fingerprint_t fingerprintDelta, bool allocas);
-  fingerprint_t popFrame();
+  std::pair<fingerprint_t,bool> popFrame();
   bool findLoop();
   void clear();
 

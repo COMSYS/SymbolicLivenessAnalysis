@@ -35,10 +35,6 @@ private:
     }
   }
 
-  void clearDelta() {
-    fingerprintDelta = {};
-  }
-
 protected:
   // buffer that holds current hash after calling generateHash()
   fingerprint_t buffer = {};
@@ -71,11 +67,12 @@ public:
 
   void removeDelta() {
     executeXOR(fingerprint, fingerprintDelta);
-    clearDelta();
+    fingerprintDelta = {};
   }
 
   void applyDelta(fingerprint_t &delta) {
     executeXOR(fingerprint, delta);
+    executeXOR(fingerprintDelta, delta);
   }
 
   void updateConstantExpr(const ConstantExpr &expr) {
