@@ -20,6 +20,7 @@ klee_add_component(kleeCore
   ExternalDispatcher.cpp
   ImpliedValue.cpp
   Memory.cpp
+  MemoryFingerprint.cpp
   MemoryManager.cpp
   MemoryState.cpp
   MemoryTrace.cpp
