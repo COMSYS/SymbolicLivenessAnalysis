@@ -1037,15 +1037,15 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
 
 void Executor::bindLocal(KInstruction *target, ExecutionState &state, 
                          ref<Expr> value) {
-  ref<Expr> dest = getDestCell(state, target).value;
+  Cell &cell = getDestCell(state, target);
   if (DetectInfiniteLoops) {
-    if (!dest.isNull()) {
+    if (!cell.value.isNull()) {
       // unregister previous value to avoid cancellation
-      state.memoryState.unregisterLocal(target, dest);
+      state.memoryState.unregisterLocal(target, cell.value);
     }
     state.memoryState.registerLocal(target, value);
   }
-  getDestCell(state, target).value = value;
+  cell.value = value;
 }
 
 void Executor::bindArgument(KFunction *kf, unsigned index, 
