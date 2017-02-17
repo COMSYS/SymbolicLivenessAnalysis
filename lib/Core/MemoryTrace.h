@@ -3,25 +3,26 @@
 
 #include "klee/Internal/Module/KInstruction.h"
 
-#include <array>
 #include <vector>
 
 namespace klee {
 
 class MemoryTrace {
 
+using fingerprint_t = MemoryFingerprint::fingerprint_t;
+
 private:
   struct MemoryTraceEntry {
     const KInstruction *inst;
-    std::array<std::uint8_t, 20> hash;
+    fingerprint_t fingerprint;
 
     MemoryTraceEntry(const KInstruction *inst,
-                     std::array<std::uint8_t, 20> hash)
-        : inst(inst), hash(hash) {}
+                     fingerprint_t fingerprint)
+        : inst(inst), fingerprint(fingerprint) {}
 
     bool operator==(const MemoryTraceEntry &rhs) {
       // check KInstruction first (short-circuit evaluation)
-      return (inst == rhs.inst && hash == rhs.hash);
+      return (inst == rhs.inst && fingerprint == rhs.fingerprint);
     }
 
     bool operator!=(const MemoryTraceEntry &rhs) { return !(operator==(rhs)); }
@@ -31,13 +32,13 @@ private:
     // first index in stack that belongs to next stack frame
     std::size_t index;
     // locals and arguments only visible within this stack frame
-    std::array<std::uint8_t, 20> hashDifference;
+    fingerprint_t fingerprintDelta;
     // did this stack frame contain any allocas?
     bool allocas;
 
     StackFrameEntry(std::size_t index,
-                    std::array<std::uint8_t, 20> hashDifference, bool allocas)
-        : index(index), hashDifference(hashDifference), allocas(allocas) {}
+                    fingerprint_t fingerprintDelta, bool allocas)
+        : index(index), fingerprintDelta(fingerprintDelta), allocas(allocas) {}
   };
 
   std::vector<MemoryTraceEntry> stack;
@@ -48,15 +49,13 @@ public:
   MemoryTrace(const MemoryTrace &) = default;
 
   void registerBasicBlock(const KInstruction *instruction,
-                          const std::array<std::uint8_t, 20> &hash);
-  void registerEndOfStackFrame(std::array<std::uint8_t, 20> hashDifference,
-                               bool allocas);
-  std::array<std::uint8_t, 20> popFrame();
+                          const fingerprint_t &fingerprint);
+  void registerEndOfStackFrame(fingerprint_t fingerprintDelta, bool allocas);
+  fingerprint_t popFrame();
   bool findLoop();
   void clear();
 
   void debugStack();
-  std::string Sha1String(const std::array<std::uint8_t, 20> &buffer);
 };
 }
 

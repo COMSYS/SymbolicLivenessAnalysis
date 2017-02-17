@@ -1,4 +1,5 @@
 #include "DebugInfiniteLoopDetection.h"
+#include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
 #include "klee/Internal/Module/InstructionInfoTable.h"
@@ -13,15 +14,15 @@
 namespace klee {
 
 void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
-                                     const std::array<std::uint8_t, 20> &hash) {
-  MemoryTraceEntry *entry = new MemoryTraceEntry(instruction, hash);
+                                     const fingerprint_t &fingerprint) {
+  MemoryTraceEntry *entry = new MemoryTraceEntry(instruction, fingerprint);
   stack.push_back(*entry);
 }
 
-void MemoryTrace::registerEndOfStackFrame(
-    std::array<std::uint8_t, 20> hashDifference, bool allocas) {
+void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintDelta,
+                                          bool allocas) {
   StackFrameEntry *entry =
-      new StackFrameEntry(stack.size(), hashDifference, allocas);
+    new StackFrameEntry(stack.size(), fingerprintDelta, allocas);
   stackFrames.push_back(*entry);
 }
 
@@ -38,16 +39,16 @@ void MemoryTrace::clear() {
   }
 }
 
-std::array<std::uint8_t, 20> MemoryTrace::popFrame() {
+MemoryFingerprint::fingerprint_t MemoryTrace::popFrame() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
     debugStack();
   }
 
   if (!stackFrames.empty()) {
     StackFrameEntry &sfe = stackFrames.back();
-    std::array<std::uint8_t, 20> hashDifference = sfe.hashDifference;
+    fingerprint_t fingerprintDelta = sfe.fingerprintDelta;
 
-    // delete all PCs and hashes of BasicBlocks
+    // delete all PCs and fingerprints of BasicBlocks
     // that are part of current stack frame
     std::size_t index = sfe.index;
     stack.erase(stack.begin() + index, stack.end());
@@ -57,7 +58,7 @@ std::array<std::uint8_t, 20> MemoryTrace::popFrame() {
     // remove topmost stack frame
     stackFrames.pop_back();
 
-    return hashDifference;
+    return fingerprintDelta;
   }
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
@@ -130,20 +131,11 @@ void MemoryTrace::debugStack() {
         }
       }
       llvm::errs() << entry.inst << " (" << ii.file << ":" << ii.line << ":"
-                   << ii.id << "): " << Sha1String(entry.hash) << "\n";
+                   << ii.id << "): "
+                   << MemoryFingerprint::toString(entry.fingerprint) << "\n";
     }
     llvm::errs() << "BOTTOM OF MemoryTrace STACK\n";
   }
 }
 
-std::string
-MemoryTrace::Sha1String(const std::array<std::uint8_t, 20> &buffer) {
-  std::stringstream result;
-  for (std::array<std::uint8_t, 20>::const_iterator iter = buffer.cbegin();
-       iter != buffer.cend(); ++iter) {
-    result << std::hex << std::setfill('0') << std::setw(2);
-    result << static_cast<unsigned int>(*iter);
-  }
-  return result.str();
-}
 }

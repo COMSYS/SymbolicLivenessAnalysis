@@ -2,13 +2,12 @@
 #define KLEE_MEMORYSTATE_H
 
 #include "DebugInfiniteLoopDetection.h"
+#include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
 #include "klee/Internal/Module/KInstruction.h"
 #include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/Support/SHA1.h"
 
-#include <array>
 #include <cstdint>
 
 namespace klee {
@@ -16,19 +15,11 @@ namespace klee {
 class MemoryState {
 
 private:
-  std::array<std::uint8_t, 20> stateHash = {};
-  std::array<std::uint8_t, 20> stackFrameHash = {};
+  MemoryFingerprint fingerprint;
   MemoryTrace trace;
   bool allocasInCurrentStackFrame = false;
 
-  static std::string Sha1String(const std::array<std::uint8_t, 20> &buffer);
-
   static std::string ExprString(ref<Expr> expr);
-  void addUint64ToHash(util::SHA1 &sha1, const std::uint64_t address);
-  void addConstantExprToHash(util::SHA1 &sha1, const ConstantExpr &expr);
-  void addExprStringToHash(util::SHA1 &sha1, ref<Expr> expr);
-  void xorStateHash(const std::array<std::uint8_t, 20> &hash);
-  void xorStackFrameHash(const std::array<std::uint8_t, 20> &hash);
 
 public:
   MemoryState() = default;
