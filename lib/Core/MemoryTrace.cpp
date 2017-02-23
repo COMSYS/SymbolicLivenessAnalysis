@@ -15,15 +15,12 @@ namespace klee {
 
 void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
                                      const fingerprint_t &fingerprint) {
-  MemoryTraceEntry *entry = new MemoryTraceEntry(instruction, fingerprint);
-  stack.push_back(*entry);
+  stack.emplace_back(instruction, fingerprint);
 }
 
 void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintDelta,
                                           bool allocas) {
-  StackFrameEntry *entry =
-    new StackFrameEntry(stack.size(), fingerprintDelta, allocas);
-  stackFrames.push_back(*entry);
+  stackFrames.emplace_back(stack.size(), fingerprintDelta, allocas);
 }
 
 void MemoryTrace::clear() {
