@@ -103,21 +103,8 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
   }
 }
 
-void MemoryState::registerConstraint(ref<Expr> condition) {
-  fingerprint.updateUint8(4);
-  fingerprint.updateExpr(condition);
-  fingerprint.applyToFingerprint();
-
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "MemoryState: adding new constraint: "
-                 << ExprString(condition)
-                 << " [fingerprint: " << fingerprint.getFingerprintAsString()
-                 << "]\n";
-  }
-}
-
 void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
-  fingerprint.updateUint8(5);
+  fingerprint.updateUint8(4);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(target));
 
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
@@ -143,7 +130,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
                                    ref<Expr> value) {
-  fingerprint.updateUint8(6);
+  fingerprint.updateUint8(5);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
   fingerprint.updateUint64(index);
 

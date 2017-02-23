@@ -1008,9 +1008,6 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   }
 
   state.addConstraint(condition);
-  if (DetectInfiniteLoops) {
-    state.memoryState.registerConstraint(condition);
-  }
   if (ivcEnabled)
     doImpliedValueConcretization(state, condition, 
                                  ConstantExpr::alloc(1, Expr::Bool));

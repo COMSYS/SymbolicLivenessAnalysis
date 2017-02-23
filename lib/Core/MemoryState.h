@@ -45,8 +45,6 @@ public:
     registerWrite(base, mo, os);
   }
 
-  void registerConstraint(ref<Expr> condition);
-
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
