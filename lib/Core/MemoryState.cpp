@@ -14,8 +14,15 @@
 namespace klee {
 
 void MemoryState::registerExternalFunctionCall() {
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: external function call\n";
+  }
+
   // it is unknown whether control flow is changed by an external function
   trace.clear();
+
+  // make all previous changes to fingerprint permanent
+  fingerprint.resetDelta();
 }
 
 void MemoryState::registerAllocation(const MemoryObject &mo) {
@@ -200,21 +207,29 @@ void MemoryState::registerPopFrame() {
                  << "\n";
   }
 
-  // remove delta (locals and arguments) of stack frame that is to be left
-  fingerprint.removeDelta();
+  if (trace.getNumberOfStackFrames() > 0) {
+    // remove delta (locals and arguments) of stack frame that is to be left
+    fingerprint.removeDelta();
 
-  // make locals and argument "visible" again by
-  // applying delta of stack frame that is to be entered
-  auto previousFrame = trace.popFrame();
-  fingerprint.applyDelta(previousFrame.first);
+    // make locals and argument "visible" again by
+    // applying delta of stack frame that is to be entered
+    auto previousFrame = trace.popFrame();
+    fingerprint.applyDelta(previousFrame.first);
 
-  allocasInCurrentStackFrame = previousFrame.second;
+    allocasInCurrentStackFrame = previousFrame.second;
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "reapplying delta: " << fingerprint.getDeltaAsString()
-                 << "\nAllocas: " << allocasInCurrentStackFrame
-                 << "\nFingerprint: " << fingerprint.getFingerprintAsString()
-                 << "\n";
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << "reapplying delta: " << fingerprint.getDeltaAsString()
+                   << "\nAllocas: " << allocasInCurrentStackFrame
+                   << "\nFingerprint: " << fingerprint.getFingerprintAsString()
+                   << "\n";
+    }
+  } else {
+    // no stackframe left to pop
+
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      llvm::errs() << "no stackframe left in trace\n";
+    }
   }
 }
 

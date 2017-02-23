@@ -67,6 +67,10 @@ public:
 
   void removeDelta() {
     executeXOR(fingerprint, fingerprintDelta);
+    resetDelta();
+  }
+
+  void resetDelta() {
     fingerprintDelta = {};
   }
 

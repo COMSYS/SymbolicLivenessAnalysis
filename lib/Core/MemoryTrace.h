@@ -55,6 +55,7 @@ public:
   std::pair<fingerprint_t,bool> popFrame();
   bool findLoop();
   void clear();
+  std::size_t getNumberOfStackFrames();
 
   void debugStack();
 };

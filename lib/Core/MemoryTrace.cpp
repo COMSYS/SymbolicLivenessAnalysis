@@ -39,6 +39,10 @@ void MemoryTrace::clear() {
   }
 }
 
+std::size_t MemoryTrace::getNumberOfStackFrames() {
+  return stackFrames.size();
+}
+
 std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
     debugStack();
@@ -59,12 +63,12 @@ std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
     // remove topmost stack frame
     stackFrames.pop_back();
 
-    return std::make_pair(fingerprintDelta, allocas);
-  }
+    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+      llvm::errs() << "Popping StackFrame\n";
+      debugStack();
+    }
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
-    llvm::errs() << "Popping StackFrame\n";
-    debugStack();
+    return std::make_pair(fingerprintDelta, allocas);
   }
 
   return {};
