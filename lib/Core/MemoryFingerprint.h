@@ -164,6 +164,19 @@ public:
   void updateExpr(ref<Expr> expr);
 };
 
+template <typename T>
+class MemoryFingerprint_ostream : public llvm::raw_ostream {
+private:
+  T &hash;
+  std::uint64_t pos = 0;
+
+public:
+  explicit MemoryFingerprint_ostream(T &_hash) : hash(_hash) {}
+  void write_impl(const char *ptr, std::size_t size) override;
+  uint64_t current_pos() const override { return pos; }
+  ~MemoryFingerprint_ostream() override { flush(); }
+};
+
 }
 
 #endif
