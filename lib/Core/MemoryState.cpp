@@ -4,8 +4,10 @@
 #include "MemoryState.h"
 
 #include "klee/Internal/Module/InstructionInfoTable.h"
+#include "klee/Internal/Support/ErrorHandling.h"
 
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/Function.h"
 
 #include <cmath>
 #include <iomanip>
@@ -42,6 +44,9 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
 
 void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
                                 const ObjectState &os) {
+  if (inLibraryFunction) {
+    return;
+  }
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: processing ObjectState at base address "
@@ -162,6 +167,11 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
 }
 
 bool MemoryState::findLoop() {
+  if (inLibraryFunction) {
+    // we do not want to find infinite loops in library functions
+    return false;
+  }
+
   bool result = trace.findLoop();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
@@ -171,6 +181,38 @@ bool MemoryState::findLoop() {
   }
 
   return result;
+}
+
+bool MemoryState::enterLibraryFunction(llvm::Function *f,
+  ref<ConstantExpr> address, const MemoryObject *mo) {
+  if (inLibraryFunction) {
+    // we can only enter one library function at a time
+    klee_warning_once(f, "already entered a library function");
+    return false;
+  }
+
+  inLibraryFunction = true;
+  currentLibraryFunction = f;
+  currentLibraryFunctionDestinationAddress = address;
+  currentLibraryFunctionDestinationMemoryObject = mo;
+
+  return true;
+}
+
+bool MemoryState::isInLibraryFunction(llvm::Function *f) {
+  if (inLibraryFunction && f == currentLibraryFunction) {
+    return true;
+  }
+  return false;
+}
+
+std::pair<ref<ConstantExpr>, const MemoryObject*>
+MemoryState::leaveLibraryFunction() {
+  inLibraryFunction = false;
+  currentLibraryFunction = nullptr;
+
+  return std::make_pair(currentLibraryFunctionDestinationAddress,
+    currentLibraryFunctionDestinationMemoryObject);
 }
 
 void MemoryState::registerPushFrame() {

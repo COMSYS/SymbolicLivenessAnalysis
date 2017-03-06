@@ -1203,6 +1203,36 @@ void Executor::executeCall(ExecutionState &state,
                            KInstruction *ki,
                            Function *f,
                            std::vector< ref<Expr> > &arguments) {
+  static Function *fmemset = kmodule->module->getFunction("memset");
+  static Function *fmemcpy = kmodule->module->getFunction("memcpy");
+  static Function *fmemmove = kmodule->module->getFunction("memmove");
+
+  if (fmemset == f || fmemcpy == f || fmemmove == f) {
+    ConstantExpr *constAddress = dyn_cast<ConstantExpr>(arguments[0]);
+    ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
+
+    if (constAddress && constSize) {
+      ObjectPair op;
+      bool success;
+      success = state.addressSpace.resolveOne(constAddress, op);
+
+      if (success) {
+        const MemoryObject *mo = op.first;
+        const ObjectState *os = op.second;
+
+        std::uint64_t count = constSize->getZExtValue(64);
+        std::uint64_t addr = constAddress->getZExtValue(64);
+        std::uint64_t offset = addr - mo->address;
+
+        if (mo->size >= offset + count) {
+          if (state.memoryState.enterLibraryFunction(f, constAddress, mo)) {
+            state.memoryState.unregisterWrite(constAddress, *mo, *os);
+          }
+        }
+      }
+    }
+  }
+
   Instruction *i = ki->inst;
   if (f && f->isDeclaration()) {
     switch(f->getIntrinsicID()) {
@@ -1478,11 +1508,21 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     // Control flow
   case Instruction::Ret: {
     ReturnInst *ri = cast<ReturnInst>(i);
-    KInstIterator kcaller = state.stack.back().caller;
+    StackFrame &sf = state.stack.back();
+    KInstIterator kcaller = sf.caller;
     Instruction *caller = kcaller ? kcaller->inst : 0;
     bool isVoidReturn = (ri->getNumOperands() == 0);
     ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
-    
+
+    Function *callee = sf.kf->function;
+    if (state.memoryState.isInLibraryFunction(callee)) {
+      auto pair = state.memoryState.leaveLibraryFunction();
+      ref<ConstantExpr> constantAddress = pair.first;
+      const MemoryObject *mo = pair.second;
+      const ObjectState *os = state.addressSpace.findObject(mo);
+      state.memoryState.registerWrite(constantAddress, *mo, *os);
+    }
+
     if (!isVoidReturn) {
       result = eval(ki, 0, state).value;
     }

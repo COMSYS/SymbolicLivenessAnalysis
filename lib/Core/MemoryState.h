@@ -9,6 +9,11 @@
 #include "klee/Internal/Module/KModule.h"
 
 #include <cstdint>
+#include <utility>
+
+namespace llvm {
+class Function;
+}
 
 namespace klee {
 
@@ -18,6 +23,10 @@ private:
   MemoryFingerprint fingerprint;
   MemoryTrace trace;
   bool allocasInCurrentStackFrame = false;
+  bool inLibraryFunction = false;
+  llvm::Function *currentLibraryFunction;
+  ref<ConstantExpr> currentLibraryFunctionDestinationAddress;
+  const MemoryObject *currentLibraryFunctionDestinationMemoryObject;
 
   static std::string ExprString(ref<Expr> expr);
 
@@ -61,6 +70,11 @@ public:
   void registerBasicBlock(const KInstruction *inst);
 
   bool findLoop();
+
+  bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
+    const MemoryObject *mo);
+  bool isInLibraryFunction(llvm::Function *f);
+  std::pair<ref<ConstantExpr>, const MemoryObject*> leaveLibraryFunction();
 
   void registerPushFrame();
   void registerPopFrame();
