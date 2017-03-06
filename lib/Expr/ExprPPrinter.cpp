@@ -135,6 +135,10 @@ private:
     bool openedList = false, nextShouldBreak = false;
     unsigned outerIndent = PC.pos;
     unsigned middleIndent = 0;
+
+    // We only have to print the most recent update
+    std::vector<ref<Expr>> prevUpdate;
+
     for (const UpdateNode *un = head; un; un = un->next) {      
       // We are done if we hit the cache.
       std::map<const UpdateNode*, unsigned>::iterator it = 
@@ -154,21 +158,26 @@ private:
         openedList = nextShouldBreak = false;
      }
     
-      if (!openedList) {
-        openedList = 1;
-        PC << '[';
-        middleIndent = PC.pos;
-      } else {
-        PC << ',';
-        printSeparator(PC, !nextShouldBreak, middleIndent);
+      if (std::count(prevUpdate.begin(), prevUpdate.end(), un->index) == 0) {
+        if (!openedList) {
+          openedList = 1;
+          PC << '[';
+          middleIndent = PC.pos;
+        } else {
+          PC << ',';
+          printSeparator(PC, !nextShouldBreak, middleIndent);
+        }
+
+        //PC << "(=";
+        //unsigned innerIndent = PC.pos;
+        print(un->index, PC);
+        //printSeparator(PC, isSimple(un->index), innerIndent);
+        PC << "=";
+        print(un->value, PC);
+        //PC << ')';
+
+        prevUpdate.push_back(un->index);
       }
-      //PC << "(=";
-      //unsigned innerIndent = PC.pos;
-      print(un->index, PC);
-      //printSeparator(PC, isSimple(un->index), innerIndent);
-      PC << "=";
-      print(un->value, PC);
-      //PC << ')';
       
       nextShouldBreak = !(isa<ConstantExpr>(un->index) && 
                           isa<ConstantExpr>(un->value));
