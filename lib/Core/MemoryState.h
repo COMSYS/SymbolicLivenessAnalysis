@@ -2,6 +2,7 @@
 #define KLEE_MEMORYSTATE_H
 
 #include "DebugInfiniteLoopDetection.h"
+#include "Memory.h"
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
@@ -23,10 +24,12 @@ private:
   MemoryFingerprint fingerprint;
   MemoryTrace trace;
   bool allocasInCurrentStackFrame = false;
+
   bool inLibraryFunction = false;
   llvm::Function *currentLibraryFunction;
   ref<ConstantExpr> currentLibraryFunctionDestinationAddress;
   const MemoryObject *currentLibraryFunctionDestinationMemoryObject;
+  std::size_t currentLibraryFunctionBytes;
 
   static std::string ExprString(ref<Expr> expr);
 
@@ -43,20 +46,30 @@ public:
     registerAllocation(mo);
   }
 
-  void registerWrite(ref<Expr> base, const MemoryObject &mo,
-                     const ObjectState &os);
-  void unregisterWrite(ref<Expr> base, const MemoryObject &mo,
-                       const ObjectState &os) {
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  void registerWrite(ref<Expr> address, const MemoryObject &mo,
+                     const ObjectState &os, std::size_t bytes);
+  void registerWrite(ref<Expr> address, const MemoryObject &mo,
+                     const ObjectState &os) {
+    registerWrite(address, mo, os, os.size);
+  }
+  void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
+                       const ObjectState &os, std::size_t bytes) {
+    if (!inLibraryFunction
+      && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
 
-    registerWrite(base, mo, os);
+    registerWrite(address, mo, os, bytes);
+  }
+  void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
+                       const ObjectState &os) {
+    unregisterWrite(address, mo, os, os.size);
   }
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (!inLibraryFunction
+      && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
 
@@ -72,9 +85,10 @@ public:
   bool findLoop();
 
   bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
-    const MemoryObject *mo);
+    const MemoryObject *mo, std::size_t bytes);
   bool isInLibraryFunction(llvm::Function *f);
-  std::pair<ref<ConstantExpr>, const MemoryObject*> leaveLibraryFunction();
+  std::tuple<ref<ConstantExpr>, const MemoryObject*, std::size_t>
+    leaveLibraryFunction();
 
   void registerPushFrame();
   void registerPopFrame();

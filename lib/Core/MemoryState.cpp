@@ -42,11 +42,13 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   }
 }
 
-void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
-                                const ObjectState &os) {
+void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
+                                const ObjectState &os, std::size_t bytes) {
   if (inLibraryFunction) {
     return;
   }
+
+  ref<ConstantExpr> base = mo.getBaseExpr();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: processing ObjectState at base address "
@@ -56,31 +58,35 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
   if (!allocasInCurrentStackFrame)
     allocasInCurrentStackFrame = true;
 
-  ConstantExpr *constantBase = dyn_cast<ConstantExpr>(base);
+  ref<Expr> offset = mo.getOffsetExpr(address);
+  ConstantExpr *concreteOffset = dyn_cast<ConstantExpr>(offset);
 
-  for (std::uint64_t offset = 0; offset < os.size; offset++) {
-    // add base address to fingerprint
-    if (constantBase) {
-      // concrete address
-      fingerprint.updateUint8(2);
-      assert(constantBase->getWidth() <= 64 && "address greater than 64 bit!");
-      std::uint64_t address = constantBase->getZExtValue(64);
-      fingerprint.updateUint64(address);
-    } else {
-      // symbolic address
-      fingerprint.updateUint8(3);
-      fingerprint.updateExpr(base);
+  std::uint64_t begin = 0;
+  std::uint64_t end = os.size;
+
+  // optimization for concrete offsets: only hash changed indices
+  if (concreteOffset) {
+    begin = concreteOffset->getZExtValue(64);
+    if ((begin + bytes) < os.size) {
+      end = begin + bytes;
     }
+  }
+
+  for (std::uint64_t i = begin; i < end; i++) {
+    // add base address to fingerprint
+    fingerprint.updateUint8(2);
+    std::uint64_t baseAddress = base->getZExtValue(64);
+    fingerprint.updateUint64(baseAddress);
 
     // add current offset to fingerprint
-    fingerprint.updateUint64(offset);
+    fingerprint.updateUint64(i);
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-      llvm::errs() << "[+" << offset << "] ";
+      llvm::errs() << "[+" << i << "] ";
     }
 
     // add value of byte at offset to fingerprint
-    ref<Expr> valExpr = os.read8(offset);
+    ref<Expr> valExpr = os.read8(i);
     if (ConstantExpr *constant = dyn_cast<ConstantExpr>(valExpr)) {
       // concrete value
       fingerprint.updateUint8(0);
@@ -109,7 +115,7 @@ void MemoryState::registerWrite(ref<Expr> base, const MemoryObject &mo,
 }
 
 void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
-  fingerprint.updateUint8(4);
+  fingerprint.updateUint8(3);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(target));
 
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
@@ -135,7 +141,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
                                    ref<Expr> value) {
-  fingerprint.updateUint8(5);
+  fingerprint.updateUint8(4);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
   fingerprint.updateUint64(index);
 
@@ -184,7 +190,7 @@ bool MemoryState::findLoop() {
 }
 
 bool MemoryState::enterLibraryFunction(llvm::Function *f,
-  ref<ConstantExpr> address, const MemoryObject *mo) {
+  ref<ConstantExpr> address, const MemoryObject *mo, std::size_t bytes) {
   if (inLibraryFunction) {
     // we can only enter one library function at a time
     klee_warning_once(f, "already entered a library function");
@@ -195,6 +201,7 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
   currentLibraryFunction = f;
   currentLibraryFunctionDestinationAddress = address;
   currentLibraryFunctionDestinationMemoryObject = mo;
+  currentLibraryFunctionBytes = bytes;
 
   return true;
 }
@@ -206,13 +213,14 @@ bool MemoryState::isInLibraryFunction(llvm::Function *f) {
   return false;
 }
 
-std::pair<ref<ConstantExpr>, const MemoryObject*>
+std::tuple<ref<ConstantExpr>, const MemoryObject*, std::size_t>
 MemoryState::leaveLibraryFunction() {
   inLibraryFunction = false;
   currentLibraryFunction = nullptr;
 
-  return std::make_pair(currentLibraryFunctionDestinationAddress,
-    currentLibraryFunctionDestinationMemoryObject);
+  return std::make_tuple(currentLibraryFunctionDestinationAddress,
+    currentLibraryFunctionDestinationMemoryObject,
+    currentLibraryFunctionBytes);
 }
 
 void MemoryState::registerPushFrame() {

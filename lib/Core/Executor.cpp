@@ -1208,25 +1208,25 @@ void Executor::executeCall(ExecutionState &state,
   static Function *fmemmove = kmodule->module->getFunction("memmove");
 
   if (fmemset == f || fmemcpy == f || fmemmove == f) {
-    ConstantExpr *constAddress = dyn_cast<ConstantExpr>(arguments[0]);
+    ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
     ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
 
-    if (constAddress && constSize) {
+    if (constAddr && constSize) {
       ObjectPair op;
       bool success;
-      success = state.addressSpace.resolveOne(constAddress, op);
+      success = state.addressSpace.resolveOne(constAddr, op);
 
       if (success) {
         const MemoryObject *mo = op.first;
         const ObjectState *os = op.second;
 
         std::uint64_t count = constSize->getZExtValue(64);
-        std::uint64_t addr = constAddress->getZExtValue(64);
+        std::uint64_t addr = constAddr->getZExtValue(64);
         std::uint64_t offset = addr - mo->address;
 
         if (mo->size >= offset + count) {
-          if (state.memoryState.enterLibraryFunction(f, constAddress, mo)) {
-            state.memoryState.unregisterWrite(constAddress, *mo, *os);
+          if (state.memoryState.enterLibraryFunction(f, constAddr, mo, count)) {
+            state.memoryState.unregisterWrite(constAddr, *mo, *os, count);
           }
         }
       }
@@ -1516,11 +1516,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     Function *callee = sf.kf->function;
     if (state.memoryState.isInLibraryFunction(callee)) {
-      auto pair = state.memoryState.leaveLibraryFunction();
-      ref<ConstantExpr> constantAddress = pair.first;
-      const MemoryObject *mo = pair.second;
+      auto tuple = state.memoryState.leaveLibraryFunction();
+      ref<ConstantExpr> constantAddress = std::get<0>(tuple);
+      const MemoryObject *mo = std::get<1>(tuple);
       const ObjectState *os = state.addressSpace.findObject(mo);
-      state.memoryState.registerWrite(constantAddress, *mo, *os);
+      std::size_t bytes = std::get<2>(tuple);
+      state.memoryState.registerWrite(constantAddress, *mo, *os, bytes);
     }
 
     if (!isVoidReturn) {
@@ -3386,11 +3387,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           if (DetectInfiniteLoops) {
             // unregister previous value to avoid cancellation
-            state.memoryState.unregisterWrite(address, *mo, *wos);
+            state.memoryState.unregisterWrite(address, *mo, *wos, bytes);
           }
           wos->write(offset, value);
           if (DetectInfiniteLoops) {
-            state.memoryState.registerWrite(address, *mo, *wos);
+            state.memoryState.registerWrite(address, *mo, *wos, bytes);
           }
         }          
       } else {
@@ -3436,11 +3437,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           if (DetectInfiniteLoops) {
             // unregister previous value to avoid cancellation
-            state.memoryState.unregisterWrite(address, *mo, *wos);
+            state.memoryState.unregisterWrite(address, *mo, *wos, bytes);
           }
           wos->write(mo->getOffsetExpr(address), value);
           if (DetectInfiniteLoops) {
-            state.memoryState.registerWrite(address, *mo, *wos);
+            state.memoryState.registerWrite(address, *mo, *wos, bytes);
           }
         }
       } else {
