@@ -1429,7 +1429,8 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     PHINode *first = static_cast<PHINode*>(state.pc->inst);
     state.incomingBBIndex = first->getBasicBlockIndex(src);
   }
-  if (DetectInfiniteLoops) {
+  if (DetectInfiniteLoops && dst->getSinglePredecessor() == nullptr) {
+    // more than one predecessor
     state.memoryState.registerBasicBlock(state.pc);
     if (state.memoryState.findLoop()) {
       terminateStateOnError(state, "infinite loop",
