@@ -1311,11 +1311,6 @@ void Executor::executeCall(ExecutionState &state,
     state.pc = kf->instructions;
     if (DetectInfiniteLoops) {
       state.memoryState.registerPushFrame();
-      state.memoryState.registerBasicBlock(state.pc);
-      if (state.memoryState.findLoop()) {
-        terminateStateOnError(state, "infinite loop",
-                              InfiniteLoop);
-      }
     }
 
     if (statsTracker)
@@ -1408,6 +1403,14 @@ void Executor::executeCall(ExecutionState &state,
     unsigned numFormals = f->arg_size();
     for (unsigned i=0; i<numFormals; ++i) 
       bindArgument(kf, i, state, arguments[i]);
+
+    if (DetectInfiniteLoops) {
+      state.memoryState.registerBasicBlock(state.pc);
+      if (state.memoryState.findLoop()) {
+        terminateStateOnError(state, "infinite loop",
+                              InfiniteLoop);
+      }
+    }
   }
 }
 
