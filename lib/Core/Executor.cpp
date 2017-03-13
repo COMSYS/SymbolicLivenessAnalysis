@@ -1295,8 +1295,12 @@ void Executor::executeCall(ExecutionState &state,
       klee_error("unknown intrinsic: %s", f->getName().data());
     }
 
-    if (InvokeInst *ii = dyn_cast<InvokeInst>(i))
+    if (InvokeInst *ii = dyn_cast<InvokeInst>(i)) {
+      if (DetectInfiniteLoops) {
+        state.memoryState.registerPushFrame();
+      }
       transferToBasicBlock(ii->getNormalDest(), i->getParent(), state);
+    }
   } else {
     // FIXME: I'm not really happy about this reliance on prevPC but it is ok, I
     // guess. This just done to avoid having to pass KInstIterator everywhere
