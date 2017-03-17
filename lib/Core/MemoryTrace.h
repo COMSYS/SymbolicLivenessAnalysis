@@ -34,12 +34,13 @@ private:
     std::size_t index;
     // locals and arguments only visible within this stack frame
     fingerprint_t fingerprintDelta;
-    // did this stack frame contain any allocas?
-    bool allocas;
+    // did this stack frame contain any global allocation?
+    bool globalAllocation;
 
     StackFrameEntry(std::size_t index,
-                    fingerprint_t fingerprintDelta, bool allocas)
-        : index(index), fingerprintDelta(fingerprintDelta), allocas(allocas) {}
+                    fingerprint_t fingerprintDelta, bool globalAllocation)
+        : index(index), fingerprintDelta(fingerprintDelta),
+          globalAllocation(globalAllocation) {}
   };
 
   std::vector<MemoryTraceEntry> stack;
@@ -51,7 +52,8 @@ public:
 
   void registerBasicBlock(const KInstruction *instruction,
                           const fingerprint_t &fingerprint);
-  void registerEndOfStackFrame(fingerprint_t fingerprintDelta, bool allocas);
+  void registerEndOfStackFrame(fingerprint_t fingerprintDelta,
+                               bool globalAllocation);
   std::pair<fingerprint_t,bool> popFrame();
   bool findLoop();
   void clear();

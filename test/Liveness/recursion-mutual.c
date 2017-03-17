@@ -4,8 +4,8 @@
 // RUN: %llvmgcc %s -emit-llvm -O3 -g -c -o %t-O3.bc
 
 // RUN: rm -rf %t-O0.klee-out
-// RUN: %klee -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=1000 %t-O0.bc 2>&1 | FileCheck %s -check-prefix=CHECK_O0
-// RUN: not test -f %t-O0.klee-out/test000001.infty.err
+// RUN: %klee -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=1000 %t-O0.bc 2>&1 | FileCheck %s
+// RUN: test -f %t-O0.klee-out/test000001.infty.err
 // RUN: rm -rf %t-O1.klee-out
 // RUN: %klee -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 %t-O1.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O1.klee-out/test000001.infty.err
@@ -16,29 +16,28 @@
 // RUN: %klee -output-dir=%t-O3.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 %t-O3.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O3.klee-out/test000001.infty.err
 
-// -O0 is not expected to work because of allocas in is_even and is_odd
+int is_odd(unsigned int n);
 
-int is_odd(int n);
-
-int is_even(int n) {
-  // CHECK_O0: aborting search for infinite loops
+// returns 1 if n is even, 0 otherwise
+int is_even(unsigned int n) {
   if (n != 0)
-    n = is_odd(n + 1); // bug: should be minus instead of plus
+    n = is_odd(n + 1); // BUG: should be minus instead of plus
   else
-    n = 1;
+    n = 0; // recursion ends here, number is even
 
-  // multiplication added to complicate tail recursion
-  return n * -1;
+  // operation added to prevent tail call optimization
+  return 1 - n;
 }
 
-int is_odd(int n) {
+// returns 1 if n is odd, 0 otherwise
+int is_odd(unsigned int n) {
   if (n != 0)
     n = is_even(n - 1);
   else
-    n = 0;
+    n = 0; // recursion ends here, number is odd
 
-  // multiplication added to complicate tail recursion
-  return n * -1;
+  // operation added to prevent tail call optimization
+  return 1 - n;
 }
 
 int main(void) {

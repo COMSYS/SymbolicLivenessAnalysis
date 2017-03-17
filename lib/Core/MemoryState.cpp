@@ -32,7 +32,11 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   fingerprint.updateUint64(mo.address);
   fingerprint.updateUint64(mo.size);
 
-  fingerprint.applyToFingerprint();
+  if (mo.isLocal) {
+    fingerprint.applyToFingerprintAndDelta();
+  } else {
+    fingerprint.applyToFingerprint();
+  }
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: processing (de)allocation at address "
@@ -55,8 +59,8 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                  << ExprString(base) << "\n";
   }
 
-  if (!allocasInCurrentStackFrame)
-    allocasInCurrentStackFrame = true;
+  if (!globalAllocationsInCurrentStackFrame && !mo.isLocal)
+    globalAllocationsInCurrentStackFrame = true;
 
   ref<Expr> offset = mo.getOffsetExpr(address);
   ConstantExpr *concreteOffset = dyn_cast<ConstantExpr>(offset);
@@ -105,7 +109,11 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       }
     }
 
-    fingerprint.applyToFingerprint();
+    if (mo.isLocal) {
+      fingerprint.applyToFingerprintAndDelta();
+    } else {
+      fingerprint.applyToFingerprint();
+    }
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << " [fingerprint: "
@@ -241,13 +249,14 @@ void MemoryState::registerPushFrame() {
     llvm::errs() << "MemoryState: PUSHFRAME\n";
   }
 
-  trace.registerEndOfStackFrame(fingerprint.getDelta(), allocasInCurrentStackFrame);
+  trace.registerEndOfStackFrame(fingerprint.getDelta(),
+                                globalAllocationsInCurrentStackFrame);
 
   // make locals and arguments "invisible"
   fingerprint.removeDelta();
 
   // reset stack frame specific information
-  allocasInCurrentStackFrame = false;
+  globalAllocationsInCurrentStackFrame = false;
 }
 
 void MemoryState::registerPopFrame() {
@@ -261,16 +270,16 @@ void MemoryState::registerPopFrame() {
     // remove delta (locals and arguments) of stack frame that is to be left
     fingerprint.removeDelta();
 
-    // make locals and argument "visible" again by
+    // make locals and arguments "visible" again by
     // applying delta of stack frame that is to be entered
     auto previousFrame = trace.popFrame();
     fingerprint.applyDelta(previousFrame.first);
 
-    allocasInCurrentStackFrame = previousFrame.second;
+    globalAllocationsInCurrentStackFrame = previousFrame.second;
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "reapplying delta: " << fingerprint.getDeltaAsString()
-                   << "\nAllocas: " << allocasInCurrentStackFrame
+                   << "\nGlobal Alloc: " << globalAllocationsInCurrentStackFrame
                    << "\nFingerprint: " << fingerprint.getFingerprintAsString()
                    << "\n";
     }

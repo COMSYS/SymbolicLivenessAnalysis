@@ -22,7 +22,7 @@ class MemoryState {
 private:
   MemoryFingerprint fingerprint;
   MemoryTrace trace;
-  bool allocasInCurrentStackFrame = false;
+  bool globalAllocationsInCurrentStackFrame = false;
 
   struct libraryFunction {
     bool entered = false;
