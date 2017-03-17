@@ -1203,35 +1203,37 @@ void Executor::executeCall(ExecutionState &state,
                            KInstruction *ki,
                            Function *f,
                            std::vector< ref<Expr> > &arguments) {
-  static Function *fmemset = kmodule->module->getFunction("memset");
-  static Function *fmemcpy = kmodule->module->getFunction("memcpy");
-  static Function *fmemmove = kmodule->module->getFunction("memmove");
 
-  if (fmemset == f || fmemcpy == f || fmemmove == f) {
-    ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
-    ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
+  if (DetectInfiniteLoops) {
+    static Function *fmemset = kmodule->module->getFunction("memset");
+    static Function *fmemcpy = kmodule->module->getFunction("memcpy");
+    static Function *fmemmove = kmodule->module->getFunction("memmove");
 
-    if (constAddr && constSize) {
-      ObjectPair op;
-      bool success;
-      success = state.addressSpace.resolveOne(constAddr, op);
+    if (fmemset == f || fmemcpy == f || fmemmove == f) {
+      ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
+      ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
 
-      if (success) {
-        const MemoryObject *mo = op.first;
-        const ObjectState *os = op.second;
+      if (constAddr && constSize) {
+        ObjectPair op;
+        bool success;
+        success = state.addressSpace.resolveOne(constAddr, op);
 
-        std::uint64_t count = constSize->getZExtValue(64);
-        std::uint64_t addr = constAddr->getZExtValue(64);
-        std::uint64_t offset = addr - mo->address;
+        if (success) {
+          const MemoryObject *mo = op.first;
+          const ObjectState *os = op.second;
 
-        if (mo->size >= offset + count) {
-          if (state.memoryState.enterLibraryFunction(f, constAddr, mo, count)) {
-            state.memoryState.unregisterWrite(constAddr, *mo, *os, count);
+          std::uint64_t count = constSize->getZExtValue(64);
+          std::uint64_t addr = constAddr->getZExtValue(64);
+          std::uint64_t offset = addr - mo->address;
+
+          if (mo->size >= offset + count) {
+            state.memoryState.enterLibraryFunction(f, constAddr, mo, os, count);
           }
         }
       }
     }
   }
+
 
   Instruction *i = ki->inst;
   if (f && f->isDeclaration()) {
@@ -1522,14 +1524,14 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     bool isVoidReturn = (ri->getNumOperands() == 0);
     ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
 
-    Function *callee = sf.kf->function;
-    if (state.memoryState.isInLibraryFunction(callee)) {
-      auto tuple = state.memoryState.leaveLibraryFunction();
-      ref<ConstantExpr> constantAddress = std::get<0>(tuple);
-      const MemoryObject *mo = std::get<1>(tuple);
-      const ObjectState *os = state.addressSpace.findObject(mo);
-      std::size_t bytes = std::get<2>(tuple);
-      state.memoryState.registerWrite(constantAddress, *mo, *os, bytes);
+    if (DetectInfiniteLoops) {
+      Function *callee = sf.kf->function;
+      if (state.memoryState.isInLibraryFunction(callee)) {
+        const MemoryObject *mo =
+          state.memoryState.getLibraryFunctionMemoryObject();
+        const ObjectState *os = state.addressSpace.findObject(mo);
+        state.memoryState.leaveLibraryFunction(os);
+      }
     }
 
     if (!isVoidReturn) {

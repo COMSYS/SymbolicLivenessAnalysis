@@ -44,7 +44,7 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
 
 void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                                 const ObjectState &os, std::size_t bytes) {
-  if (inLibraryFunction) {
+  if (libraryFunction.entered) {
     return;
   }
 
@@ -115,6 +115,10 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 }
 
 void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
+  if (libraryFunction.entered) {
+    return;
+  }
+
   fingerprint.updateUint8(3);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(target));
 
@@ -141,6 +145,10 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
                                    ref<Expr> value) {
+  if (libraryFunction.entered) {
+    return;
+  }
+
   fingerprint.updateUint8(4);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
   fingerprint.updateUint64(index);
@@ -173,7 +181,7 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
 }
 
 bool MemoryState::findLoop() {
-  if (inLibraryFunction) {
+  if (libraryFunction.entered) {
     // we do not want to find infinite loops in library functions
     return false;
   }
@@ -190,37 +198,42 @@ bool MemoryState::findLoop() {
 }
 
 bool MemoryState::enterLibraryFunction(llvm::Function *f,
-  ref<ConstantExpr> address, const MemoryObject *mo, std::size_t bytes) {
-  if (inLibraryFunction) {
+  ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
+  std::size_t bytes) {
+  if (libraryFunction.entered) {
     // we can only enter one library function at a time
     klee_warning_once(f, "already entered a library function");
     return false;
   }
 
-  inLibraryFunction = true;
-  currentLibraryFunction = f;
-  currentLibraryFunctionDestinationAddress = address;
-  currentLibraryFunctionDestinationMemoryObject = mo;
-  currentLibraryFunctionBytes = bytes;
+  unregisterWrite(address, *mo, *os, bytes);
+
+  libraryFunction.entered = true;
+  libraryFunction.function = f;
+  libraryFunction.address = address;
+  libraryFunction.mo = mo;
+  libraryFunction.bytes = bytes;
 
   return true;
 }
 
 bool MemoryState::isInLibraryFunction(llvm::Function *f) {
-  if (inLibraryFunction && f == currentLibraryFunction) {
+  if (libraryFunction.entered && f == libraryFunction.function) {
     return true;
   }
   return false;
 }
 
-std::tuple<ref<ConstantExpr>, const MemoryObject*, std::size_t>
-MemoryState::leaveLibraryFunction() {
-  inLibraryFunction = false;
-  currentLibraryFunction = nullptr;
+const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
+  return libraryFunction.mo;
+}
 
-  return std::make_tuple(currentLibraryFunctionDestinationAddress,
-    currentLibraryFunctionDestinationMemoryObject,
-    currentLibraryFunctionBytes);
+void MemoryState::leaveLibraryFunction(const ObjectState *os) {
+  libraryFunction.entered = false;
+  libraryFunction.function = nullptr;
+
+  registerWrite(libraryFunction.address, *libraryFunction.mo, *os,
+    libraryFunction.bytes);
 }
 
 void MemoryState::registerPushFrame() {

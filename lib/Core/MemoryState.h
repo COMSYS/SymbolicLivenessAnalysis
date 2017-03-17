@@ -10,7 +10,6 @@
 #include "klee/Internal/Module/KModule.h"
 
 #include <cstdint>
-#include <utility>
 
 namespace llvm {
 class Function;
@@ -25,11 +24,13 @@ private:
   MemoryTrace trace;
   bool allocasInCurrentStackFrame = false;
 
-  bool inLibraryFunction = false;
-  llvm::Function *currentLibraryFunction;
-  ref<ConstantExpr> currentLibraryFunctionDestinationAddress;
-  const MemoryObject *currentLibraryFunctionDestinationMemoryObject;
-  std::size_t currentLibraryFunctionBytes;
+  struct libraryFunction {
+    bool entered = false;
+    llvm::Function *function = nullptr;
+    ref<ConstantExpr> address;
+    const MemoryObject *mo = nullptr;
+    std::size_t bytes = 0;
+  } libraryFunction;
 
   static std::string ExprString(ref<Expr> expr);
 
@@ -54,7 +55,7 @@ public:
   }
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                        const ObjectState &os, std::size_t bytes) {
-    if (!inLibraryFunction
+    if (!libraryFunction.entered
       && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
@@ -68,7 +69,7 @@ public:
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-    if (!inLibraryFunction
+    if (!libraryFunction.entered
       && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
@@ -85,10 +86,10 @@ public:
   bool findLoop();
 
   bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
-    const MemoryObject *mo, std::size_t bytes);
+    const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
   bool isInLibraryFunction(llvm::Function *f);
-  std::tuple<ref<ConstantExpr>, const MemoryObject*, std::size_t>
-    leaveLibraryFunction();
+  const MemoryObject *getLibraryFunctionMemoryObject();
+  void leaveLibraryFunction(const ObjectState *os);
 
   void registerPushFrame();
   void registerPopFrame();
