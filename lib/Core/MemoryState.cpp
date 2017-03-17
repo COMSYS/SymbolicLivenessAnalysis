@@ -52,6 +52,8 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     return;
   }
 
+  os.hasBeenWritten = true;
+
   ref<ConstantExpr> base = mo.getBaseExpr();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {

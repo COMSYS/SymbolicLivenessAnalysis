@@ -26,6 +26,7 @@ namespace klee {
 
 class BitArray;
 class MemoryManager;
+class MemoryState;
 class Solver;
 class ArrayCache;
 
@@ -169,6 +170,10 @@ public:
   unsigned size;
 
   bool readOnly;
+
+private:
+  friend class MemoryState;
+  mutable bool hasBeenWritten = false;
 
 public:
   /// Create a new object state for the given memory object with concrete

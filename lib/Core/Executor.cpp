@@ -3295,6 +3295,7 @@ void Executor::executeFree(ExecutionState &state,
     for (Executor::ExactResolutionList::iterator it = rl.begin(), 
            ie = rl.end(); it != ie; ++it) {
       const MemoryObject *mo = it->first.first;
+      const ObjectState *os = it->first.second;
       if (mo->isLocal) {
         terminateStateOnError(*it->second, "free of alloca", Free, NULL,
                               getAddressInfo(*it->second, address));
@@ -3302,6 +3303,7 @@ void Executor::executeFree(ExecutionState &state,
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
+        it->second->memoryState.unregisterWrite(mo->getBaseExpr(), *mo, *os);
         it->second->memoryState.registerDeallocation(*mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)
