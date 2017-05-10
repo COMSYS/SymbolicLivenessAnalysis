@@ -19,6 +19,10 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 namespace llvm {
   class Function;
   class Instruction;
@@ -178,6 +182,62 @@ public:
   bool runOnModule(llvm::Module &M);
   bool checkPassed() const { return instructionOperandsConform; }
 };
+
+/// LiveRegisterPass - Pass specifically for Infinite Loop Detection in KLEE!
+/// Determines which registers are live w.r.t. the detection of infinite loops
+/// and might therefore not be useful for other use cases!
+/// Attaches analysis information as metatdata to be processed by KLEE (outside
+/// of another pass).
+class LiveRegisterPass : public llvm::FunctionPass {
+public:
+  static char ID;
+  LiveRegisterPass() : FunctionPass(ID) {}
+
+  virtual bool runOnFunction(llvm::Function &F);
+
+private:
+  typedef std::pair<llvm::Instruction*, llvm::Instruction*> edge_t;
+  typedef std::unordered_set<llvm::Value *> valueset_t;
+
+  struct InstructionInfo {
+    std::vector<edge_t> predecessorEdges;
+    valueset_t gen;
+    valueset_t kill;
+    valueset_t live;
+  };
+
+  std::vector<edge_t> worklist;
+  std::vector<InstructionInfo> instructions;
+  std::unordered_map<const llvm::Instruction *, std::size_t> instructionIndex;
+
+  inline InstructionInfo& getInstructionInfo(const llvm::Instruction *i) {
+    return instructions[instructionIndex[i]];
+  }
+
+  void initializeWorklist(llvm::Function &F);
+  void executeWorklistAlgorithm();
+
+  void attachAnalysisResultAsMetadata(llvm::Function &F);
+
+  void generateInstructionInfo(llvm::Function &F);
+  void addPredecessors(std::vector<edge_t> &worklist,
+                       const llvm::Instruction *i);
+  valueset_t transition(const llvm::Instruction *i, const valueset_t &set);
+
+  template<typename T>
+  bool subsetEquals(const std::unordered_set<T> &subset,
+                    const std::unordered_set<T> &set);
+
+  template<typename T>
+  std::unordered_set<T> setMinus(const std::unordered_set<T> &set,
+                                 const std::unordered_set<T> &minus);
+
+  template<typename T>
+  std::unordered_set<T> setUnion(const std::unordered_set<T> &set1,
+                                 const std::unordered_set<T> &set2);
+
+};
+
 }
 
 #endif

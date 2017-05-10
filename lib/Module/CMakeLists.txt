@@ -13,6 +13,7 @@ klee_add_component(kleeModule
   IntrinsicCleaner.cpp
   KInstruction.cpp
   KModule.cpp
+  LiveRegister.cpp
   LowerSwitch.cpp
   ModuleUtil.cpp
   Optimize.cpp
