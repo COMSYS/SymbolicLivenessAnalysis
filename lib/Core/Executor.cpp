@@ -1232,8 +1232,47 @@ void Executor::executeCall(ExecutionState &state,
         }
       }
     }
-  }
 
+    static Function *fputc = kmodule->module->getFunction("fputc");
+    static Function *putc = kmodule->module->getFunction("putc");
+    static Function *fputwc = kmodule->module->getFunction("fputwc");
+    static Function *putwc = kmodule->module->getFunction("putwc");
+    static Function *fputs = kmodule->module->getFunction("fputs");
+    static Function *fputws = kmodule->module->getFunction("fputws");
+    static Function *putchar = kmodule->module->getFunction("putchar");
+    static Function *putwchar = kmodule->module->getFunction("putwchar");
+    static Function *puts = kmodule->module->getFunction("puts");
+
+    static Function *printf = kmodule->module->getFunction("printf");
+    static Function *fprintf = kmodule->module->getFunction("fprintf");
+    static Function *sprintf = kmodule->module->getFunction("sprintf");
+    static Function *snprintf = kmodule->module->getFunction("snprintf");
+
+    static Function *wprintf = kmodule->module->getFunction("wprintf");
+    static Function *fwprintf = kmodule->module->getFunction("fwprintf");
+    static Function *swprintf = kmodule->module->getFunction("swprintf");
+
+    static Function *vprintf = kmodule->module->getFunction("vprintf");
+    static Function *vfprintf = kmodule->module->getFunction("vfprintf");
+    static Function *vsprintf = kmodule->module->getFunction("vsprintf");
+    static Function *vsnprintf = kmodule->module->getFunction("vsnprintf");
+
+    static Function *vwprintf = kmodule->module->getFunction("vwprintf");
+    static Function *vfwprintf = kmodule->module->getFunction("vfwprintf");
+    static Function *vswprintf = kmodule->module->getFunction("vswprintf");
+
+    // low level:
+    static Function *write = kmodule->module->getFunction("write");
+
+    if (f == fputc || f == putc || f == fputwc || f == putwc || f == fputs ||
+        f == fputws || f == putchar || f == putwchar || f == puts ||
+        f == printf || f == fprintf || f == sprintf || f == snprintf ||
+        f == wprintf || f == fwprintf || f == swprintf || f == vprintf ||
+        f == vfprintf || f == vsprintf || f == vsnprintf || f == vwprintf ||
+        f == vfwprintf || f == vswprintf || f == write) {
+        state.memoryState.enterOutputFunction(f);
+    }
+  }
 
   Instruction *i = ki->inst;
   if (f && f->isDeclaration()) {
@@ -1536,6 +1575,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
           state.memoryState.getLibraryFunctionMemoryObject();
         const ObjectState *os = state.addressSpace.findObject(mo);
         state.memoryState.leaveLibraryFunction(os);
+      } else if (state.memoryState.isInOutputFunction(callee)) {
+        state.memoryState.leaveOutputFunction();
       }
     }
 
@@ -3038,7 +3079,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   if (specialFunctionHandler->handle(state, function, target, arguments))
     return;
 
-  if (DetectInfiniteLoops && !okExternals.count(function->getName())) {
+  if (DetectInfiniteLoops) {
     state.memoryState.registerExternalFunctionCall();
   }
 

@@ -21,6 +21,10 @@
 namespace klee {
 
 void MemoryState::registerExternalFunctionCall() {
+  if (outputFunction.entered) {
+    return;
+  }
+
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: external function call\n";
   }
@@ -53,7 +57,7 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
 
 void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                                 const ObjectState &os, std::size_t bytes) {
-  if (libraryFunction.entered) {
+  if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
 
@@ -128,7 +132,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 }
 
 void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
-  if (libraryFunction.entered) {
+  if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
 
@@ -160,7 +164,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
 void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
 {
-  if (libraryFunction.entered) {
+  if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
 
@@ -194,7 +198,7 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
                                    ref<Expr> value) {
-  if (libraryFunction.entered) {
+  if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
 
@@ -414,7 +418,7 @@ void MemoryState::clearLocal(const ExecutionState *state,
 
 
 bool MemoryState::findLoop() {
-  if (libraryFunction.entered) {
+  if (libraryFunction.entered || outputFunction.entered) {
     // we do not want to find infinite loops in library functions
     return false;
   }
@@ -428,6 +432,35 @@ bool MemoryState::findLoop() {
   }
 
   return result;
+}
+
+bool MemoryState::enterOutputFunction(llvm::Function *f) {
+  if (outputFunction.entered) {
+    // we can only enter one output function at a time
+    // (we do not need to register additional output functions called by e.g.
+    // printf)
+    return false;
+  }
+
+  llvm::errs() << "MemoryState: entering output function: "
+               << f->getName() << "\n";
+
+  outputFunction.entered = true;
+  outputFunction.function = f;
+
+  return true;
+}
+
+void MemoryState::leaveOutputFunction() {
+  llvm::errs() << "MemoryState: leaving output function: "
+               << outputFunction.function->getName() << "\n";
+
+  outputFunction.entered = false;
+  outputFunction.function = nullptr;
+}
+
+bool MemoryState::isInOutputFunction(llvm::Function *f) {
+  return (outputFunction.entered && f == outputFunction.function);
 }
 
 bool MemoryState::enterLibraryFunction(llvm::Function *f,
@@ -451,10 +484,7 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
 }
 
 bool MemoryState::isInLibraryFunction(llvm::Function *f) {
-  if (libraryFunction.entered && f == libraryFunction.function) {
-    return true;
-  }
-  return false;
+  return (libraryFunction.entered && f == libraryFunction.function);
 }
 
 const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {

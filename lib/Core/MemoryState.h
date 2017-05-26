@@ -29,6 +29,11 @@ private:
   MemoryTrace trace;
   bool globalAllocationsInCurrentStackFrame = false;
 
+  struct outputFunction {
+    bool entered = false;
+    llvm::Function *function = nullptr;
+  } outputFunction;
+
   struct libraryFunction {
     bool entered = false;
     llvm::Function *function = nullptr;
@@ -96,7 +101,7 @@ public:
   }
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                        const ObjectState &os, std::size_t bytes) {
-    if (libraryFunction.entered) {
+    if (libraryFunction.entered || outputFunction.entered) {
       return;
     }
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
@@ -111,7 +116,7 @@ public:
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-    if (!libraryFunction.entered
+    if (!libraryFunction.entered && !outputFunction.entered
       && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
@@ -129,6 +134,10 @@ public:
                           llvm::BasicBlock *src);
 
   bool findLoop();
+
+  bool enterOutputFunction(llvm::Function *f);
+  void leaveOutputFunction();
+  bool isInOutputFunction(llvm::Function *f);
 
   bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
     const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
