@@ -3190,11 +3190,12 @@ void Executor::executeAlloc(ExecutionState &state,
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
         os->initializeToZero();
-        if (DetectInfiniteLoops) {
-          state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
-        }
       } else {
         os->initializeToRandom();
+      }
+
+      if (DetectInfiniteLoops) {
+        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
       }
       bindLocal(target, state, mo->getBaseExpr());
       

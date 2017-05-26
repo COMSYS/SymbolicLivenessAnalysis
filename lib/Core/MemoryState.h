@@ -96,7 +96,7 @@ public:
   }
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                        const ObjectState &os, std::size_t bytes) {
-    if (!os.hasBeenWritten || libraryFunction.entered) {
+    if (libraryFunction.entered) {
       return;
     }
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
