@@ -3,11 +3,16 @@
 #include "Memory.h"
 #include "MemoryState.h"
 
+#include "klee/ExecutionState.h"
+#include "klee/Internal/Module/Cell.h"
 #include "klee/Internal/Module/InstructionInfoTable.h"
 #include "klee/Internal/Support/ErrorHandling.h"
 
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Metadata.h"
 
 #include <cmath>
 #include <iomanip>
@@ -129,8 +134,44 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
     return;
   }
 
+  if (value.isNull()) {
+    return;
+  }
+
+  llvm::Instruction *inst = target->inst;
+  if (inst->getParent() != basicBlockInfo.bb) {
+    populateLiveRegisters(inst->getParent());
+  }
+  llvm::Value *instValue = static_cast<llvm::Value *>(inst);
+  if (std::find(basicBlockInfo.liveRegisters.begin(),
+                basicBlockInfo.liveRegisters.end(),
+                instValue) == basicBlockInfo.liveRegisters.end())
+  {
+    return;
+  }
+
+  registerLocal(inst, value);
+
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: register local %" << target->inst->getName()
+                 << ": " << ExprString(value)
+                 << " [fingerprint: " << fingerprint.getFingerprintAsString()
+                 << "]\n";
+  }
+}
+
+void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
+{
+  if (libraryFunction.entered) {
+    return;
+  }
+
+  if (value.isNull()) {
+    return;
+  }
+
   fingerprint.updateUint8(3);
-  fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(target));
+  fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
 
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
     // concrete value
@@ -182,13 +223,197 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
   }
 }
 
+
+void MemoryState::populateLiveRegisters(const llvm::BasicBlock *bb) {
+  if (basicBlockInfo.bb != bb) {
+    basicBlockInfo.bb = bb;
+    basicBlockInfo.liveRegisters.clear();
+
+    const llvm::Instruction *term = bb->getTerminator();
+    if (llvm::MDNode *liveRegisters = term->getMetadata("liveregister.live")) {
+      for (std::size_t i = 0; i < liveRegisters->getNumOperands(); ++i) {
+        llvm::Value *live = liveRegisters->getOperand(i);
+        basicBlockInfo.liveRegisters.push_back(live);
+      }
+    }
+  }
+}
+
 void MemoryState::registerBasicBlock(const KInstruction *inst) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: BASICBLOCK\n";
   }
 
+  llvm::BasicBlock *bb = inst->inst->getParent();
+  populateLiveRegisters(bb);
   trace.registerBasicBlock(inst, fingerprint.getFingerprint());
 }
+
+void MemoryState::removeConsumedLocals(const ExecutionState *state,
+                                          llvm::BasicBlock *bb,
+                                          bool unregister) {
+    const llvm::Instruction *ti = bb->getTerminator();
+    llvm::MDNode *consumedRegisters = ti->getMetadata("liveregister.consumed");
+    if (consumedRegisters != nullptr) {
+      for (std::size_t i = 0; i < consumedRegisters->getNumOperands(); ++i) {
+        llvm::Value *consumed = consumedRegisters->getOperand(i);
+        llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
+        if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+          llvm::errs() << "MemoryState: consumed by previous basic block: "
+                       << inst->getName() << "\n";
+        }
+        if (unregister) {
+          // remove local from delta
+          unregisterLocal(state, inst);
+        }
+        // set local within KLEE to zero to mark them as dead
+        clearLocal(state, inst);
+      }
+    }
+}
+
+void MemoryState::registerBasicBlock(const ExecutionState *state,
+                                     llvm::BasicBlock *dst,
+                                     llvm::BasicBlock *src) {
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "registerBasicBlock " << dst->getName()
+                 << " (coming from " << src->getName() << ")\n";
+  }
+
+  removeConsumedLocals(state, src);
+
+  populateLiveRegisters(dst);
+
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "live variables at the end of " << dst->getName() << ": {";
+    for (std::size_t i = 0; i < basicBlockInfo.liveRegisters.size(); ++i) {
+      llvm::Value *liveRegister = basicBlockInfo.liveRegisters.at(i);
+
+      llvm::errs() << "%" << liveRegister->getName();
+      if (i + 1 < basicBlockInfo.liveRegisters.size()) {
+        llvm::errs() << ", ";
+      }
+    }
+    llvm::errs() << "}\n";
+  }
+
+
+  // kill registers
+  //
+  // liveregister.killed:
+  //
+  // +-- edges
+  // |
+  // (
+  //   (precedingBasicBlock1, (killedRegister1, killedRegister2)), // edge 1
+  //   (precedingBasicBlock2, (killedRegister3, killedRegister3))  // edge 2
+  // ) |                      |
+  //   +-- edge              +-- kills
+
+  const llvm::Instruction *inst = &*dst->begin();
+  if (llvm::MDNode *edges = inst->getMetadata("liveregister.killed")) {
+    for (std::size_t i = 0; i < edges->getNumOperands(); ++i) {
+      llvm::Value *edgeValue = edges->getOperand(i);
+      if (llvm::MDNode *edge = dyn_cast<llvm::MDNode>(edgeValue)) {
+        if (edge->getNumOperands() != 2) {
+          llvm::errs() << "MemoryState: liveregister.killed metadata is in "
+                       << "wrong shape\n";
+        }
+        llvm::Value *bbValue = edge->getOperand(0);
+        llvm::BasicBlock *bb = dyn_cast<llvm::BasicBlock>(bbValue);
+        if (bb != nullptr) {
+          if (bb != src) {
+            // wrong edge: no evaluation of registers to kill, go to next edge
+            continue;
+          }
+        } else {
+          llvm::errs() << "MemoryState: liveregister.killed metadata does not "
+                       << "reference valid basic block\n";
+        }
+
+        llvm::Value *killsValue = edge->getOperand(1);
+        llvm::MDNode *killsNode = dyn_cast<llvm::MDNode>(killsValue);
+        for (std::size_t j = 0; j < killsNode->getNumOperands(); ++j) {
+          llvm::Value *kill = killsNode->getOperand(j);
+          llvm::Instruction *inst = static_cast<llvm::Instruction *>(kill);
+          if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+            llvm::errs() << "MemoryState: not live anymore: "
+                         << inst->getName() << "\n";
+          }
+          unregisterLocal(state, inst);
+          clearLocal(state, inst);
+        }
+
+        // correct edge was found, loop can be terminated
+        break;
+      }
+    }
+  }
+
+  registerBasicBlock(getKInstruction(state, dst));
+}
+
+KInstruction *MemoryState::getKInstruction(const ExecutionState *state,
+                                           const llvm::BasicBlock* bb)
+{
+  KFunction *kf = state->stack.back().kf;
+  unsigned entry = kf->basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)];
+  return kf->instructions[entry];
+}
+
+KInstruction *MemoryState::getKInstruction(const ExecutionState *state,
+                                           const llvm::Instruction* inst)
+{
+  // FIXME: ugly hack
+  llvm::BasicBlock *bb = const_cast<llvm::BasicBlock *>(inst->getParent());
+  if (bb != nullptr) {
+    KFunction *kf = state->stack.back().kf;
+    if (kf != nullptr) {
+      unsigned entry = kf->basicBlockEntry[bb];
+      while ((entry + 1) < kf->numInstructions
+             && kf->instructions[entry]->inst != inst)
+      {
+        entry++;
+      }
+      return kf->instructions[entry];
+    }
+  }
+  return nullptr;
+}
+
+ref<Expr> MemoryState::getLocalValue(const ExecutionState *state,
+                                const KInstruction *kinst)
+{
+  return state->stack.back().locals[kinst->dest].value;
+}
+
+ref<Expr> MemoryState::getLocalValue(const ExecutionState *state,
+                                const llvm::Instruction *inst)
+{
+  KInstruction *kinst = getKInstruction(state, inst);
+  if (kinst != nullptr) {
+    return getLocalValue(state, kinst);
+  }
+  return nullptr;
+}
+
+void MemoryState::clearLocal(const ExecutionState *state,
+                             const KInstruction *kinst)
+{
+  state->stack.back().locals[kinst->dest].value = nullptr;
+  assert(getLocalValue(state, kinst).isNull());
+}
+
+void MemoryState::clearLocal(const ExecutionState *state,
+                             const llvm::Instruction *inst)
+{
+  KInstruction *kinst = getKInstruction(state, inst);
+  if (kinst != nullptr) {
+    clearLocal(state, kinst);
+  }
+  assert(getLocalValue(state, inst).isNull());
+}
+
 
 bool MemoryState::findLoop() {
   if (libraryFunction.entered) {
@@ -261,7 +486,10 @@ void MemoryState::registerPushFrame() {
   globalAllocationsInCurrentStackFrame = false;
 }
 
-void MemoryState::registerPopFrame() {
+void MemoryState::registerPopFrame(const ExecutionState *state,
+                                   KInstruction *ki) {
+  // has to be called prior to state.popFrame()
+
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: POPFRAME\n"
                  << "Fingerprint: " << fingerprint.getFingerprintAsString()
@@ -269,6 +497,12 @@ void MemoryState::registerPopFrame() {
   }
 
   if (trace.getNumberOfStackFrames() > 0) {
+    // Even though the fingerprint delta (that contains registers) is removed in
+    // the next step, we have to clear consumed locals within KLEE to be able to
+    // determine which variable has already been registered during another call
+    // to the function we are currently leaving.
+    removeConsumedLocals(state, ki->inst->getParent(), false);
+
     // remove delta (locals and arguments) of stack frame that is to be left
     fingerprint.removeDelta();
 

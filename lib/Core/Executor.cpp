@@ -1438,12 +1438,17 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     PHINode *first = static_cast<PHINode*>(state.pc->inst);
     state.incomingBBIndex = first->getBasicBlockIndex(src);
   }
-  if (DetectInfiniteLoops && dst->getSinglePredecessor() == nullptr) {
-    // more than one predecessor
-    state.memoryState.registerBasicBlock(state.pc);
-    if (state.memoryState.findLoop()) {
-      terminateStateOnError(state, "infinite loop",
-                            InfiniteLoop);
+  if (DetectInfiniteLoops) {
+    // registerBasicBlock updates live register information, thus we need to
+    // call registerBasicBlock on every BasicBlock change, not only on ones to
+    // a BasicBlock with more than one predecessor
+    state.memoryState.registerBasicBlock(&state, dst, src);
+    if (dst->getSinglePredecessor() == nullptr) {
+      // more than one predecessor
+      if (state.memoryState.findLoop()) {
+        terminateStateOnError(state, "infinite loop",
+                              InfiniteLoop);
+      }
     }
   }
 }
@@ -1542,10 +1547,13 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       assert(!caller && "caller set on initial stack frame");
       terminateStateOnExit(state);
     } else {
-      state.popFrame();
       if (DetectInfiniteLoops) {
-        state.memoryState.registerPopFrame();
+        // has to be called before state.popFrame() to update live register
+        // information that is only accessible within the stack frame that is to
+        // be left
+        state.memoryState.registerPopFrame(&state, ki);
       }
+      state.popFrame();
 
       if (statsTracker)
         statsTracker->framePopped(state);
@@ -3303,7 +3311,7 @@ void Executor::executeFree(ExecutionState &state,
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
-        it->second->memoryState.unregisterWrite(mo->getBaseExpr(), *mo, *os);
+        it->second->memoryState.unregisterWrite(*mo, *os);
         it->second->memoryState.registerDeallocation(*mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)

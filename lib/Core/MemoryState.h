@@ -9,13 +9,18 @@
 #include "klee/Internal/Module/KInstruction.h"
 #include "klee/Internal/Module/KModule.h"
 
+// only needed for unregisterLocal
+#include "llvm/IR/InstrTypes.h"
+
 #include <cstdint>
 
 namespace llvm {
+class BasicBlock;
 class Function;
 }
 
 namespace klee {
+class ExecutionState;
 
 class MemoryState {
 
@@ -32,7 +37,43 @@ private:
     std::size_t bytes = 0;
   } libraryFunction;
 
+  struct basicBlockInfo {
+    const llvm::BasicBlock *bb = nullptr;
+    std::vector<llvm::Value *> liveRegisters;
+  } basicBlockInfo;
+
   static std::string ExprString(ref<Expr> expr);
+
+  void populateLiveRegisters(const llvm::BasicBlock *bb);
+  KInstruction *getKInstruction(const ExecutionState *state,
+                                const llvm::BasicBlock* bb);
+  KInstruction *getKInstruction(const ExecutionState *state,
+                                const llvm::Instruction* inst);
+  ref<Expr> getLocalValue(const ExecutionState *state,
+                          const KInstruction *kinst);
+  ref<Expr> getLocalValue(const ExecutionState *state,
+                          const llvm::Instruction *inst);
+  void clearLocal(const ExecutionState *state, const KInstruction *kinst);
+  void clearLocal(const ExecutionState *state, const llvm::Instruction *inst);
+
+  void removeConsumedLocals(const ExecutionState *state, llvm::BasicBlock *bb,
+                            bool unregister = true);
+
+  void registerLocal(const llvm::Instruction *inst, ref<Expr> value);
+  void unregisterLocal(const ExecutionState *state,
+                       const llvm::Instruction *inst)
+  {
+    ref<Expr> value = getLocalValue(state, inst);
+    if (!value.isNull()) {
+      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+        llvm::errs() << "MemoryState: unregister local %" << inst->getName()
+                     << ": " << ExprString(value) << " "
+                     << "[fingerprint: " << fingerprint.getFingerprintAsString()
+                     << "]\n";
+      }
+      registerLocal(inst, value);
+    }
+  }
 
 public:
   MemoryState() = default;
@@ -64,9 +105,8 @@ public:
 
     registerWrite(address, mo, os, bytes);
   }
-  void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
-                       const ObjectState &os) {
-    unregisterWrite(address, mo, os, os.size);
+  void unregisterWrite(const MemoryObject &mo, const ObjectState &os) {
+    unregisterWrite(mo.getBaseExpr(), mo, os, os.size);
   }
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
@@ -84,6 +124,9 @@ public:
   void registerExternalFunctionCall();
 
   void registerBasicBlock(const KInstruction *inst);
+  void registerBasicBlock(const ExecutionState *state,
+                          llvm::BasicBlock *dst,
+                          llvm::BasicBlock *src);
 
   bool findLoop();
 
@@ -94,7 +137,7 @@ public:
   void leaveLibraryFunction(const ObjectState *os);
 
   void registerPushFrame();
-  void registerPopFrame();
+  void registerPopFrame(const ExecutionState *state, KInstruction *ki);
 };
 }
 
