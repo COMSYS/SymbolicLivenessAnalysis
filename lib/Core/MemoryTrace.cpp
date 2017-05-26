@@ -134,6 +134,10 @@ bool MemoryTrace::findLoop() {
       // iterate over all elements within the first stack frame (but the first)
       if (topEntry == *it) {
         // found an entry with same PC and fingerprint
+
+        // TODO: remove?
+        debugStack();
+
         return true;
       }
     }
@@ -170,6 +174,10 @@ bool MemoryTrace::findLoop() {
       MemoryTraceEntry &stackFrame = stack.at(it->index);
       if (topStackFrameBase == stackFrame) {
         // PC and iterator are the same at stack frame base
+
+        // TODO: remove?
+        debugStack();
+
         return true;
       }
     }
