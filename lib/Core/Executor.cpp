@@ -3154,6 +3154,20 @@ void Executor::callExternalFunction(ExecutionState &state,
     return;
   }
 
+  // there is no new stack frame for external functions and thus no return
+  // hence we have to immediately leave output and library functions if they
+  // are an external call
+  if (DetectInfiniteLoops) {
+    if (state.memoryState.isInLibraryFunction(function)) {
+      const MemoryObject *mo =
+        state.memoryState.getLibraryFunctionMemoryObject();
+      const ObjectState *os = state.addressSpace.findObject(mo);
+      state.memoryState.leaveLibraryFunction(os);
+    } else if (state.memoryState.isInOutputFunction(function)) {
+      state.memoryState.leaveOutputFunction();
+    }
+  }
+
   Type *resultType = target->inst->getType();
   if (resultType != Type::getVoidTy(function->getContext())) {
     ref<Expr> e = ConstantExpr::fromMemory((void*) args, 
