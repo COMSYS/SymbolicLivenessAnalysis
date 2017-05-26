@@ -48,7 +48,9 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   }
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "MemoryState: processing (de)allocation at address "
+    llvm::errs() << "MemoryState: processing "
+                 << (mo.isLocal ? "local " : "global ")
+                 << "(de)allocation at address "
                  << mo.address << " of size " << mo.size
                  << " [fingerprint: " << fingerprint.getFingerprintAsString()
                  << "]\n";
@@ -64,7 +66,9 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
   ref<ConstantExpr> base = mo.getBaseExpr();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "MemoryState: processing ObjectState at base address "
+    llvm::errs() << "MemoryState: processing "
+                 << (mo.isLocal ? "local " : "global ")
+                 << "ObjectState at base address "
                  << ExprString(base) << "\n";
   }
 
@@ -125,9 +129,16 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     }
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-      llvm::errs() << " [fingerprint: "
-                   << fingerprint.getFingerprintAsString() << "]\n";
+      if (i % 10 == 9) {
+        llvm::errs() << "\n";
+      } else {
+        llvm::errs() << " ";
+      }
     }
+  }
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << " [fingerprint: "
+                 << fingerprint.getFingerprintAsString() << "]\n";
   }
 }
 
@@ -172,6 +183,10 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
     return;
   }
 
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "registerLocal(%" << inst->getName() << ", value)\n";
+  }
+
   fingerprint.updateUint8(3);
   fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
 
@@ -184,16 +199,6 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
   }
 
   fingerprint.applyToFingerprintAndDelta();
-
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    const InstructionInfo &ii = *target->info;
-    llvm::errs() << "MemoryState: adding local to instruction "
-                 << reinterpret_cast<std::intptr_t>(target)
-                 << " (" << ii.file << ":" << ii.line << ":" << ii.id << ")"
-                 << ": " << ExprString(value) << "\n"
-                 << " [fingerprint: " << fingerprint.getFingerprintAsString()
-                 << "]\n";
-  }
 }
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
@@ -243,7 +248,8 @@ void MemoryState::populateLiveRegisters(const llvm::BasicBlock *bb) {
 
 void MemoryState::registerBasicBlock(const KInstruction *inst) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-    llvm::errs() << "MemoryState: BASICBLOCK\n";
+    llvm::errs() << "MemoryState: BASICBLOCK [fingerprint: "
+                 << fingerprint.getFingerprintAsString() << "]\n";
   }
 
   llvm::BasicBlock *bb = inst->inst->getParent();
@@ -472,6 +478,9 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
     return false;
   }
 
+  llvm::errs() << "MemoryState: entering library function: "
+               << f->getName() << "\n";
+
   unregisterWrite(address, *mo, *os, bytes);
 
   libraryFunction.entered = true;
@@ -492,6 +501,9 @@ const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
 }
 
 void MemoryState::leaveLibraryFunction(const ObjectState *os) {
+  llvm::errs() << "MemoryState: leaving library function: "
+               << libraryFunction.function->getName() << "\n";
+
   libraryFunction.entered = false;
   libraryFunction.function = nullptr;
 
@@ -512,6 +524,11 @@ void MemoryState::registerPushFrame() {
 
   // reset stack frame specific information
   globalAllocationsInCurrentStackFrame = false;
+
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "Fingerprint: " << fingerprint.getFingerprintAsString()
+                 << "\n";
+  }
 }
 
 void MemoryState::registerPopFrame(const ExecutionState *state,

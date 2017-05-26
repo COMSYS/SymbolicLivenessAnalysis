@@ -118,7 +118,9 @@ public:
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
     if (!libraryFunction.entered && !outputFunction.entered
       && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-      llvm::errs() << "MemoryState: UNREGISTER\n";
+      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+        llvm::errs() << "MemoryState: UNREGISTER LOCAL (KInst)\n";
+      }
     }
 
     registerLocal(target, value);
