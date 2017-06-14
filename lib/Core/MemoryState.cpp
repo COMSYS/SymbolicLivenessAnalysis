@@ -425,7 +425,7 @@ void MemoryState::clearLocal(const ExecutionState *state,
 
 bool MemoryState::findLoop() {
   if (libraryFunction.entered || outputFunction.entered) {
-    // we do not want to find infinite loops in library functions
+    // we do not want to find infinite loops in library or output functions
     return false;
   }
 
@@ -448,8 +448,10 @@ bool MemoryState::enterOutputFunction(llvm::Function *f) {
     return false;
   }
 
-  llvm::errs() << "MemoryState: entering output function: "
-               << f->getName() << "\n";
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: entering output function: "
+                 << f->getName() << "\n";
+  }
 
   outputFunction.entered = true;
   outputFunction.function = f;
@@ -458,8 +460,10 @@ bool MemoryState::enterOutputFunction(llvm::Function *f) {
 }
 
 void MemoryState::leaveOutputFunction() {
-  llvm::errs() << "MemoryState: leaving output function: "
-               << outputFunction.function->getName() << "\n";
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: leaving output function: "
+                 << outputFunction.function->getName() << "\n";
+  }
 
   outputFunction.entered = false;
   outputFunction.function = nullptr;
@@ -478,8 +482,10 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
     return false;
   }
 
-  llvm::errs() << "MemoryState: entering library function: "
-               << f->getName() << "\n";
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: entering library function: "
+                 << f->getName() << "\n";
+  }
 
   unregisterWrite(address, *mo, *os, bytes);
 
@@ -501,8 +507,10 @@ const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
 }
 
 void MemoryState::leaveLibraryFunction(const ObjectState *os) {
-  llvm::errs() << "MemoryState: leaving library function: "
-               << libraryFunction.function->getName() << "\n";
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    llvm::errs() << "MemoryState: leaving library function: "
+                 << libraryFunction.function->getName() << "\n";
+  }
 
   libraryFunction.entered = false;
   libraryFunction.function = nullptr;
