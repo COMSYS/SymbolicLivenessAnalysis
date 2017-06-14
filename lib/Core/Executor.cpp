@@ -1604,13 +1604,6 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       } else {
         state.pc = kcaller;
         ++state.pc;
-        if (DetectInfiniteLoops) {
-          state.memoryState.registerBasicBlock(state.pc);
-          if (state.memoryState.findLoop()) {
-            terminateStateOnError(state, "infinite loop",
-                                  InfiniteLoop);
-          }
-        }
       }
 
       if (!isVoidReturn) {
