@@ -70,13 +70,14 @@ private:
   {
     ref<Expr> value = getLocalValue(state, inst);
     if (!value.isNull()) {
+      registerLocal(inst, value);
+
       if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
         llvm::errs() << "MemoryState: unregister local %" << inst->getName()
                      << ": " << ExprString(value) << " "
                      << "[fingerprint: " << fingerprint.getFingerprintAsString()
                      << "]\n";
       }
-      registerLocal(inst, value);
     }
   }
 
