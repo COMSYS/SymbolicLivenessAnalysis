@@ -451,7 +451,7 @@ bool MemoryState::findLoop() {
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
     if (result) {
-      trace.debugStack();
+      trace.dumpTrace();
     }
   }
 

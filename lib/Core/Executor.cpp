@@ -3044,6 +3044,13 @@ void Executor::terminateStateOnError(ExecutionState &state,
     msg << "Stack: \n";
     state.dumpStack(msg);
 
+    if (DetectInfiniteLoops) {
+      if (termReason == InfiniteLoop) {
+        msg << "Memory Trace: \n";
+        state.memoryState.dumpTrace(msg);
+      }
+    }
+
     std::string info_str = info.str();
     if (info_str != "")
       msg << "Info: \n" << info_str;

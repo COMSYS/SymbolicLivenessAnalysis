@@ -62,14 +62,14 @@ void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintDelta,
 
 void MemoryTrace::clear() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
-    debugStack();
+    dumpTrace();
   }
 
   stack.clear();
   stackFrames.clear();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
-    debugStack();
+    dumpTrace();
   }
 }
 
@@ -79,7 +79,7 @@ std::size_t MemoryTrace::getNumberOfStackFrames() {
 
 std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
-    debugStack();
+    dumpTrace();
   }
 
   if (!stackFrames.empty()) {
@@ -99,7 +99,7 @@ std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
       llvm::errs() << "Popping StackFrame\n";
-      debugStack();
+      dumpTrace();
     }
 
     return std::make_pair(fingerprintDelta, globalAllocation);
@@ -136,7 +136,7 @@ bool MemoryTrace::findLoop() {
         // found an entry with same PC and fingerprint
 
         // TODO: remove?
-        debugStack();
+        dumpTrace();
 
         return true;
       }
@@ -176,7 +176,7 @@ bool MemoryTrace::findLoop() {
         // PC and iterator are the same at stack frame base
 
         // TODO: remove?
-        debugStack();
+        dumpTrace();
 
         return true;
       }
@@ -186,28 +186,27 @@ bool MemoryTrace::findLoop() {
   return false;
 }
 
-
-void MemoryTrace::debugStack() {
+void MemoryTrace::dumpTrace(llvm::raw_ostream &out) {
   if (stack.empty()) {
-    llvm::errs() << "MemoryTrace is empty\n";
+    out << "MemoryTrace is empty\n";
   } else {
     std::vector<StackFrameEntry> tmpFrames = stackFrames;
-    llvm::errs() << "TOP OF MemoryTrace STACK\n";
+    out << "TOP OF MemoryTrace STACK\n";
     for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
       const MemoryTraceEntry &entry = *it;
       const InstructionInfo &ii = *entry.inst->info;
       if (!tmpFrames.empty()) {
         if ((std::size_t)(stack.rend() - it) == tmpFrames.back().index) {
-          llvm::errs() << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/"
+          out << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/"
                        << stackFrames.size() << "\n";
           tmpFrames.pop_back();
         }
       }
-      llvm::errs() << entry.inst << " (" << ii.file << ":" << ii.line << ":"
+      out << entry.inst << " (" << ii.file << ":" << ii.line << ":"
                    << ii.id << "): "
                    << MemoryFingerprint::toString(entry.fingerprint) << "\n";
     }
-    llvm::errs() << "BOTTOM OF MemoryTrace STACK\n";
+    out << "BOTTOM OF MemoryTrace STACK\n";
   }
 }
 
