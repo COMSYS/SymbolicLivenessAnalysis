@@ -47,6 +47,8 @@ private:
     std::vector<llvm::Value *> liveRegisters;
   } basicBlockInfo;
 
+  bool deferredBasicBlock = false;
+
   static std::string ExprString(ref<Expr> expr);
 
   void populateLiveRegisters(const llvm::BasicBlock *bb);
@@ -131,10 +133,11 @@ public:
 
   void registerExternalFunctionCall();
 
-  void registerBasicBlock(const KInstruction *inst);
-  void registerBasicBlock(const ExecutionState *state,
+  bool registerBasicBlock(const KInstruction *inst);
+  bool registerBasicBlock(const ExecutionState *state,
                           llvm::BasicBlock *dst,
                           llvm::BasicBlock *src);
+  bool registerDeferredBasicBlock(const KInstruction *inst);
 
   bool findLoop();
 
