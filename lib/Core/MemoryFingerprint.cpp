@@ -116,4 +116,48 @@ void MemoryFingerprint_ostream<CryptoPP::BLAKE2b>::write_impl(const char *ptr,
   pos += size;
 }
 
+
+/* MemoryFingerprint_Dummy */
+
+void MemoryFingerprint_Dummy::updateUint8(const std::uint8_t value) {
+  if (first) {
+    first = false;
+  } else {
+    current += " ";
+  }
+  current += std::to_string(value);
+}
+
+void MemoryFingerprint_Dummy::updateUint64(const std::uint64_t value) {
+  if (first) {
+    first = false;
+  } else {
+    current += " ";
+  }
+  current += std::to_string(value);
+}
+
+void MemoryFingerprint_Dummy::updateExpr(ref<Expr> expr) {
+  if (first) {
+    first = false;
+  } else {
+    current += " ";
+  }
+  llvm::raw_string_ostream ostream(current);
+  ExprPPrinter::printSingleExpr(ostream, expr);
+  ostream.flush();
+}
+
+void MemoryFingerprint_Dummy::generateHash() {
+  buffer.insert(current);
+}
+
+void MemoryFingerprint_Dummy::clearHash() {
+  current = "";
+  buffer.clear();
+  first = true;
+}
+
+
+
 }

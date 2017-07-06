@@ -16,12 +16,14 @@ template<typename T> const std::type_info& FakeTypeID(void) {
 #include <array>
 #include <string>
 #include <iomanip>
+#include <type_traits>
 
 namespace klee {
 
 class MemoryFingerprint_SHA1;
 class MemoryFingerprint_CryptoPP_SHA1;
 class MemoryFingerprint_CryptoPP_BLAKE2b;
+class MemoryFingerprint_Dummy;
 
 // Set default implementation
 using MemoryFingerprint = MemoryFingerprint_CryptoPP_BLAKE2b;
@@ -29,8 +31,13 @@ using MemoryFingerprint = MemoryFingerprint_CryptoPP_BLAKE2b;
 template<typename Derived, size_t hashSize>
 class MemoryFingerprintT {
 
+private:
+  using hash_t = std::array<std::uint8_t, hashSize>;
+  using dummy_t = std::set<std::string>;
+
 public:
-  typedef std::array<std::uint8_t, hashSize> fingerprint_t;
+  typedef typename std::conditional<hashSize == 0, dummy_t, hash_t>::type
+    fingerprint_t;
 
 private:
   Derived& getDerived() {
@@ -40,10 +47,23 @@ private:
   fingerprint_t fingerprint = {};
   fingerprint_t fingerprintDelta = {};
 
-  inline void executeXOR(fingerprint_t &dst, fingerprint_t &src) {
+  template<typename T,
+    typename std::enable_if<std::is_same<T, hash_t>::value, int>::type = 0>
+  inline void executeXOR(T &dst, T &src) {
     for (std::size_t i = 0; i < hashSize; ++i) {
       dst[i] ^= src[i];
     }
+  }
+
+  template<typename T,
+    typename std::enable_if<std::is_same<T, dummy_t>::value, int>::type = 0>
+  inline void executeXOR(T &dst, T &src) {
+    dummy_t result;
+    std::set_symmetric_difference(
+        dst.begin(), dst.end(),
+        src.begin(), src.end(),
+        std::inserter(result, result.begin()));
+    dst = result;
   }
 
 protected:
@@ -103,12 +123,31 @@ public:
     }
   }
 
-  static std::string toString(const fingerprint_t &fingerprint) {
+  template<typename T,
+    typename std::enable_if<std::is_same<T, hash_t>::value, int>::type = 0>
+  static std::string toString(const T &fingerprint) {
     std::stringstream result;
     for (auto iter = fingerprint.cbegin(); iter != fingerprint.cend(); ++iter) {
       result << std::hex << std::setfill('0') << std::setw(2);
       result << static_cast<unsigned int>(*iter);
     }
+    return result.str();
+  }
+
+  template<typename T,
+    typename std::enable_if<std::is_same<T, dummy_t>::value, int>::type = 0>
+  static std::string toString(const T &fingerprint) {
+    std::stringstream result;
+
+    result << "{";
+
+    for (auto it = fingerprint.begin(); it != fingerprint.end(); ++it) {
+      // TODO: descriptive output
+      result << *it << ", ";
+    }
+
+    result << "}";
+
     return result.str();
   }
 
@@ -176,6 +215,23 @@ public:
   uint64_t current_pos() const override { return pos; }
   ~MemoryFingerprint_ostream() override { flush(); }
 };
+
+
+class MemoryFingerprint_Dummy :
+public MemoryFingerprintT<MemoryFingerprint_Dummy, 0> {
+friend class MemoryFingerprintT<MemoryFingerprint_Dummy, 0>;
+private:
+  std::string current;
+  bool first = true;
+  void generateHash();
+  void clearHash();
+
+public:
+  void updateUint8(const std::uint8_t value);
+  void updateUint64(const std::uint64_t value);
+  void updateExpr(ref<Expr> expr);
+};
+
 
 }
 
