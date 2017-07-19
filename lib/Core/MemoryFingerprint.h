@@ -14,9 +14,10 @@ template<typename T> const std::type_info& FakeTypeID(void) {
 #undef typeid
 
 #include <array>
-#include <string>
 #include <iomanip>
+#include <string>
 #include <type_traits>
+#include <unordered_set>
 
 namespace klee {
 
@@ -33,7 +34,7 @@ class MemoryFingerprintT {
 
 protected:
   using hash_t = std::array<std::uint8_t, hashSize>;
-  using dummy_t = std::set<std::string>;
+  using dummy_t = std::unordered_set<std::string>;
 
 public:
   typedef typename std::conditional<hashSize == 0, dummy_t, hash_t>::type
@@ -58,12 +59,14 @@ private:
   template<typename T,
     typename std::enable_if<std::is_same<T, dummy_t>::value, int>::type = 0>
   inline void executeXOR(T &dst, T &src) {
-    dummy_t result;
-    std::set_symmetric_difference(
-        dst.begin(), dst.end(),
-        src.begin(), src.end(),
-        std::inserter(result, result.begin()));
-    dst = result;
+    for (auto &elem : src) {
+      auto pos = dst.find(elem);
+      if (pos == dst.end()) {
+        dst.insert(elem);
+      } else {
+        dst.erase(pos);
+      }
+    }
   }
 
 protected:

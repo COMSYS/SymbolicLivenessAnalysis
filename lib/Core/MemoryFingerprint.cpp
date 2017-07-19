@@ -238,7 +238,7 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
         result << *it;
         output = true;
     }
-    if (it != --fingerprint.end() && output) {
+    if (std::next(it) != fingerprint.end() && output) {
       result << ", ";
     }
   }
