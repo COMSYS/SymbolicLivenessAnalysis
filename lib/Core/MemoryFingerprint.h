@@ -105,6 +105,11 @@ public:
     fingerprintDelta = {};
   }
 
+  void resetEverything() {
+    resetDelta();
+    fingerprint = {};
+  }
+
   void applyDelta(fingerprint_t &delta) {
     executeXOR(fingerprint, delta);
     executeXOR(fingerprintDelta, delta);

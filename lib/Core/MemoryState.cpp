@@ -20,6 +20,11 @@
 
 namespace klee {
 
+void MemoryState::clearEverything() {
+  trace.clear();
+  fingerprint.resetEverything();
+}
+
 void MemoryState::registerExternalFunctionCall() {
   if (outputFunction.entered) {
     return;

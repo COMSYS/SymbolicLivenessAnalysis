@@ -87,6 +87,8 @@ public:
   MemoryState() = default;
   MemoryState(const MemoryState &) = default;
 
+  void clearEverything();
+
   void registerAllocation(const MemoryObject &mo);
   void registerDeallocation(const MemoryObject &mo) {
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {

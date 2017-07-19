@@ -112,6 +112,7 @@ extern "C" {
   void klee_prefer_cex(void *object, uintptr_t condition);
   void klee_posix_prefer_cex(void *object, uintptr_t condition);
   void klee_mark_global(void *object);
+  void klee_clear_memory_state();
 
   /* Return a possible constant value for the input expression. This
      allows programs to forcibly concretize values on their own. */

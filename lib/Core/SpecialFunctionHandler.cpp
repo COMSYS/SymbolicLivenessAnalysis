@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 #include "SpecialFunctionHandler.h"
 #include "TimingSolver.h"
@@ -82,6 +83,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("free", handleFree, false),
   add("klee_assume", handleAssume, false),
   add("klee_check_memory_access", handleCheckMemoryAccess, false),
+  add("klee_clear_memory_state", handleClearMemoryState, false),
   add("klee_get_valuef", handleGetValue, true),
   add("klee_get_valued", handleGetValue, true),
   add("klee_get_valuel", handleGetValue, true),
@@ -672,6 +674,16 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
                                        executor.getAddressInfo(state, address));
       }
     }
+  }
+}
+
+void SpecialFunctionHandler::handleClearMemoryState(ExecutionState &state,
+                                                          KInstruction *target,
+                                                          std::vector<ref<Expr>>
+                                                            &arguments) {
+  if (DetectInfiniteLoops) {
+    state.memoryState.clearEverything();
+    klee_warning_once(target, "clearing memory state of infinite loop detection");
   }
 }
 

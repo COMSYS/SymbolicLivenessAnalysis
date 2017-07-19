@@ -103,6 +103,7 @@ namespace klee {
     HANDLER(handleAssume);
     HANDLER(handleCalloc);
     HANDLER(handleCheckMemoryAccess);
+    HANDLER(handleClearMemoryState);
     HANDLER(handleDefineFixedObject);
     HANDLER(handleDelete);    
     HANDLER(handleDeleteArray);
