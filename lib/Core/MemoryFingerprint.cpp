@@ -1,6 +1,14 @@
 #include "MemoryFingerprint.h"
 
+#include "klee/Internal/Module/KModule.h"
 #include "klee/util/ExprPPrinter.h"
+
+#include "llvm/DebugInfo.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/Support/DebugLoc.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace klee {
 
@@ -156,6 +164,88 @@ void MemoryFingerprint_Dummy::clearHash() {
   current = "";
   buffer.clear();
   first = true;
+}
+
+std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t fingerprint) {
+  std::string result_str;
+  llvm::raw_string_ostream result(result_str);
+  size_t allocations = 0;
+  size_t writes = 0;
+
+  result << "{";
+
+  for (auto it = fingerprint.begin(); it != fingerprint.end(); ++it) {
+    std::istringstream item(*it);
+    int id;
+    item >> id;
+    bool output = false;
+    switch (id) {
+      case 1:
+        allocations++;
+        break;
+      case 2:
+        writes++;
+        break;
+      case 3: {
+        std::intptr_t ptr;
+        std::string value;
+
+        item >> ptr;
+        llvm::Instruction *inst = reinterpret_cast<llvm::Instruction *>(ptr);
+
+        llvm::DebugLoc dl = inst->getDebugLoc();
+        llvm::BasicBlock *bb = inst->getParent();
+        llvm::LLVMContext &ctx = bb->getContext();
+        llvm::DIScope scope = llvm::DIScope(dl.getScope(ctx));
+
+        result << "Local: ";
+        result << inst->getName();
+        result << " (" << scope.getFilename();
+        result << ":" << dl.getLine();
+        result << ")";
+        std::getline(item, value);
+        result << " =" << value;
+        output = true;
+        break;
+      }
+      case 4: {
+        result << "Argument: ";
+        std::intptr_t ptr;
+        std::size_t argumentIndex;
+        std::uint64_t value;
+
+        item >> ptr;
+        KFunction *kf = reinterpret_cast<KFunction *>(ptr);
+        item >> argumentIndex;
+        std::size_t total = kf->function->arg_size();
+        item >> value;
+        result << kf->function->getName() << "(";
+        for (std::size_t i = 0; i < total; ++i) {
+          if (argumentIndex == i) {
+            result << value;
+          } else {
+            result << "?";
+          }
+          if (i != total - 1) {
+            result << ", ";
+          }
+        }
+        result << ")";
+        output = true;
+        break;
+      }
+      default:
+        result << *it;
+        output = true;
+    }
+    if (it != --fingerprint.end() && output) {
+      result << ", ";
+    }
+  }
+
+  result << "} + " << allocations << " allocation(s) + " << writes << " write(s)";
+
+  return result.str();
 }
 
 

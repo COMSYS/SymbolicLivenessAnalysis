@@ -31,7 +31,7 @@ using MemoryFingerprint = MemoryFingerprint_CryptoPP_BLAKE2b;
 template<typename Derived, size_t hashSize>
 class MemoryFingerprintT {
 
-private:
+protected:
   using hash_t = std::array<std::uint8_t, hashSize>;
   using dummy_t = std::set<std::string>;
 
@@ -137,18 +137,7 @@ public:
   template<typename T,
     typename std::enable_if<std::is_same<T, dummy_t>::value, int>::type = 0>
   static std::string toString(const T &fingerprint) {
-    std::stringstream result;
-
-    result << "{";
-
-    for (auto it = fingerprint.begin(); it != fingerprint.end(); ++it) {
-      // TODO: descriptive output
-      result << *it << ", ";
-    }
-
-    result << "}";
-
-    return result.str();
+    return Derived::toString_impl(fingerprint);
   }
 
   std::string getFingerprintAsString() {
@@ -225,6 +214,7 @@ private:
   bool first = true;
   void generateHash();
   void clearHash();
+  static std::string toString_impl(MemoryFingerprintT::dummy_t fingerprint);
 
 public:
   void updateUint8(const std::uint8_t value);
