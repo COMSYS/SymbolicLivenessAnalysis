@@ -12,6 +12,7 @@
 #include "CoreStats.h"
 #include "ExternalDispatcher.h"
 #include "ImpliedValue.h"
+#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 #include "MemoryManager.h"
 #include "MemoryState.h"
@@ -300,11 +301,6 @@ namespace {
   MaxMemoryInhibit("max-memory-inhibit",
             cl::desc("Inhibit forking at memory cap (vs. random terminate) (default=on)"),
             cl::init(true));
-
-  cl::opt<bool>
-  DetectInfiniteLoops("detect-infinite-loops",
-            cl::desc("Enable detection of infinite loops (default=false)"),
-            cl::init(false));
 }
 
 

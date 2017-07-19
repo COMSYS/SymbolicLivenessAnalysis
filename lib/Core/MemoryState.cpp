@@ -1,5 +1,5 @@
 #include "AddressSpace.h"
-#include "DebugInfiniteLoopDetection.h"
+#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 #include "MemoryState.h"
 

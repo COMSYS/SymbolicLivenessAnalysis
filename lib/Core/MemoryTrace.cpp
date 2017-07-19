@@ -1,4 +1,4 @@
-#include "DebugInfiniteLoopDetection.h"
+#include "InfiniteLoopDetectionFlags.h"
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 

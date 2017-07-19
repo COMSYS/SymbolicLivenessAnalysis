@@ -12,13 +12,13 @@ klee_add_component(kleeCore
   CallPathManager.cpp
   Context.cpp
   CoreStats.cpp
-  DebugInfiniteLoopDetection.cpp
   ExecutionState.cpp
   Executor.cpp
   ExecutorTimers.cpp
   ExecutorUtil.cpp
   ExternalDispatcher.cpp
   ImpliedValue.cpp
+  InfiniteLoopDetectionFlags.cpp
   Memory.cpp
   MemoryFingerprint.cpp
   MemoryManager.cpp

@@ -1,7 +1,7 @@
 #ifndef KLEE_MEMORYSTATE_H
 #define KLEE_MEMORYSTATE_H
 
-#include "DebugInfiniteLoopDetection.h"
+#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
