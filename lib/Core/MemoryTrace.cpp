@@ -186,7 +186,7 @@ bool MemoryTrace::findLoop() {
   return false;
 }
 
-void MemoryTrace::dumpTrace(llvm::raw_ostream &out) {
+void MemoryTrace::dumpTrace(llvm::raw_ostream &out) const {
   if (stack.empty()) {
     out << "MemoryTrace is empty\n";
   } else {

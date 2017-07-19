@@ -154,7 +154,7 @@ public:
   void registerPushFrame();
   void registerPopFrame(const ExecutionState *state, KInstruction *ki);
 
-  void dumpTrace(llvm::raw_ostream &out = llvm::errs()) {
+  void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const {
     trace.dumpTrace(out);
   }
 };

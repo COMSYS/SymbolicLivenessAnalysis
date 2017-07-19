@@ -59,7 +59,7 @@ public:
   void clear();
   std::size_t getNumberOfStackFrames();
 
-  void dumpTrace(llvm::raw_ostream &out = llvm::errs());
+  void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const;
 };
 }
 
