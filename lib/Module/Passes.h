@@ -184,8 +184,8 @@ public:
 };
 
 /// LiveRegisterPass - Pass specifically for Infinite Loop Detection in KLEE!
-/// Determines which registers are live w.r.t. the detection of infinite loops
-/// and might therefore not be useful for other use cases!
+/// Determines which registers are live w.r.t. the detection of infinite loops,
+/// it might therefore not be useful for any other use case!
 /// Attaches analysis information as metatdata to be processed by KLEE (outside
 /// of another pass).
 class LiveRegisterPass : public llvm::FunctionPass {
@@ -224,6 +224,8 @@ private:
                        const llvm::Instruction *i);
   valueset_t transition(const llvm::Instruction *i, const valueset_t &set);
 
+  llvm::Instruction *createNopInstruction(llvm::LLVMContext &ctx) const;
+
   template<typename T>
   bool subsetEquals(const std::unordered_set<T> &subset,
                     const std::unordered_set<T> &set);
@@ -231,10 +233,6 @@ private:
   template<typename T>
   std::unordered_set<T> setMinus(const std::unordered_set<T> &set,
                                  const std::unordered_set<T> &minus);
-
-  template<typename T>
-  std::unordered_set<T> setUnion(const std::unordered_set<T> &set1,
-                                 const std::unordered_set<T> &set2);
 
 };
 

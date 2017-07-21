@@ -28,6 +28,8 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Metadata.h"
 
+#include <algorithm>
+
 using namespace llvm;
 
 namespace klee {
@@ -37,16 +39,13 @@ char LiveRegisterPass::ID = 0;
 bool LiveRegisterPass::runOnFunction(Function &F) {
   // Add nop instruction before the first instruction of each basic block
   // to get live registers at the beginning of each basic block (as our analysis
-  // propagates backwards, we would otherwise only know thich registers are live
-  // after the execution of the first instruction of each basic block.
+  // propagates backwards, we would otherwise only know which registers are live
+  // after the execution of the first instruction of each basic block).
   // Introduced instructions are removed again at the end of this pass.
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
-    llvm::ConstantInt *zero =
-        llvm::ConstantInt::get(bb.getContext(), llvm::APInt(1, 0, false));
-    Instruction *nop = llvm::BinaryOperator::Create(
-        llvm::Instruction::BinaryOps::Or, zero, zero);
-    bb.getInstList().insert(&*bb.begin(), nop);
+    LLVMContext &ctx = bb.getContext();
+    bb.getInstList().insert(&*bb.begin(), createNopInstruction(ctx));
   }
 
   initializeWorklist(F);
@@ -89,7 +88,7 @@ void LiveRegisterPass::executeWorklistAlgorithm() {
 
     valueset_t liveUpdated = transition(i, iII.live);
     if (!subsetEquals(liveUpdated, predII.live)) {
-      predII.live = setUnion(predII.live, liveUpdated);
+      predII.live.insert(liveUpdated.begin(), liveUpdated.end());
       addPredecessors(worklist, pred);
     }
   }
@@ -100,9 +99,7 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     BasicBlock &bb = *it;
     LLVMContext &ctx = bb.getContext();
 
-    // first real instruction after nop
-    Instruction *first = &*(std::next(bb.begin()));
-    // use live register set of nop instruction as instruction info only
+    // use live register set of nop instruction since instruction info only
     // reflects registers that are live *after* the execution of the associated
     // instruction
     valueset_t &firstLive = getInstructionInfo(&*bb.begin()).live;
@@ -149,6 +146,8 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
         k.push_back(MDNode::get(ctx, tuple));
       }
     }
+    // first real instruction after nop
+    Instruction *first = &*(std::next(bb.begin()));
     first->setMetadata("liveregister.killed", MDNode::get(ctx, k));
   }
 }
@@ -180,7 +179,7 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
         ii.predecessorEdges.emplace_back(std::make_pair(i, previ));
       }
 
-      // function arguments are regarded as live and are thus ignored when
+      // parameters of functions are regarded as live and are thus ignored when
       // generating gen and kill sets
 
       // generate kill sets
@@ -214,8 +213,13 @@ LiveRegisterPass::transition(const Instruction *i, const valueset_t &set) {
   valueset_t result = set;
 
   result = setMinus(result, ii.kill);
-  result = setUnion(result, ii.gen);
+  result.insert(ii.gen.begin(), ii.gen.end());
   return result;
+}
+
+Instruction *LiveRegisterPass::createNopInstruction(LLVMContext &ctx) const {
+  ConstantInt *zero = ConstantInt::get(ctx, APInt(1, 0, false));
+  return BinaryOperator::Create(Instruction::BinaryOps::Or, zero, zero);
 }
 
 template <typename T>
@@ -247,12 +251,5 @@ LiveRegisterPass::setMinus(const std::unordered_set<T> &set,
   return result;
 }
 
-template <typename T>
-std::unordered_set<T>
-LiveRegisterPass::setUnion(const std::unordered_set<T> &set1,
-                           const std::unordered_set<T> &set2) {
-  std::unordered_set<T> result = set1;
-  result.insert(set2.begin(), set2.end());
-  return result;
-}
+
 }
