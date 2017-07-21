@@ -251,33 +251,15 @@ void MemoryState::populateLiveRegisters(const llvm::BasicBlock *bb) {
   }
 }
 
-bool MemoryState::registerBasicBlock(const KInstruction *inst) {
+void MemoryState::registerBasicBlock(const KInstruction *inst) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: BASICBLOCK [fingerprint: "
                  << fingerprint.getFingerprintAsString() << "]\n";
   }
 
-  llvm::Instruction *i = inst->inst;
-  llvm::BasicBlock *bb = i->getParent();
+  llvm::BasicBlock *bb = inst->inst->getParent();
   populateLiveRegisters(bb);
-  if (i->getOpcode() == llvm::Instruction::PHI) {
-    deferredBasicBlock = true;
-    return false;
-  } else {
-    trace.registerBasicBlock(inst, fingerprint.getFingerprint());
-    return true;
-  }
-}
-
-bool MemoryState::registerDeferredBasicBlock(const KInstruction *inst) {
-  if (deferredBasicBlock && inst->inst->getOpcode() != llvm::Instruction::PHI) {
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-      llvm::errs() << "MemoryState: register deferred BasicBlock\n";
-    }
-    deferredBasicBlock = false;
-    return registerBasicBlock(inst);
-  }
-  return false;
+  trace.registerBasicBlock(inst, fingerprint.getFingerprint());
 }
 
 void MemoryState::removeConsumedLocals(const ExecutionState *state,
@@ -303,7 +285,7 @@ void MemoryState::removeConsumedLocals(const ExecutionState *state,
     }
 }
 
-bool MemoryState::registerBasicBlock(const ExecutionState *state,
+void MemoryState::registerBasicBlock(const ExecutionState *state,
                                      llvm::BasicBlock *dst,
                                      llvm::BasicBlock *src) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
@@ -381,7 +363,7 @@ bool MemoryState::registerBasicBlock(const ExecutionState *state,
     }
   }
 
-  return registerBasicBlock(getKInstruction(state, dst));
+  registerBasicBlock(getKInstruction(state, dst));
 }
 
 KInstruction *MemoryState::getKInstruction(const ExecutionState *state,

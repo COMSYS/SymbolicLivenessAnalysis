@@ -1442,11 +1442,10 @@ void Executor::executeCall(ExecutionState &state,
       bindArgument(kf, i, state, arguments[i]);
 
     if (DetectInfiniteLoops) {
-      if (state.memoryState.registerBasicBlock(state.pc)) {
-        if (state.memoryState.findLoop()) {
-          terminateStateOnError(state, "infinite loop",
-                                InfiniteLoop);
-        }
+      state.memoryState.registerBasicBlock(state.pc);
+      if (state.memoryState.findLoop()) {
+        terminateStateOnError(state, "infinite loop",
+                              InfiniteLoop);
       }
     }
   }
@@ -1478,13 +1477,12 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     // registerBasicBlock updates live register information, thus we need to
     // call registerBasicBlock on every BasicBlock change, not only on ones to
     // a BasicBlock with more than one predecessor
-    if (state.memoryState.registerBasicBlock(&state, dst, src)) {
-      if (dst->getSinglePredecessor() == nullptr) {
-        // more than one predecessor
-        if (state.memoryState.findLoop()) {
-          terminateStateOnError(state, "infinite loop",
-                                InfiniteLoop);
-        }
+    state.memoryState.registerBasicBlock(&state, dst, src);
+    if (dst->getSinglePredecessor() == nullptr) {
+      // more than one predecessor
+      if (state.memoryState.findLoop()) {
+        terminateStateOnError(state, "infinite loop",
+                              InfiniteLoop);
       }
     }
   }
@@ -1555,15 +1553,6 @@ static inline const llvm::fltSemantics * fpWidthToSemantics(unsigned width) {
 
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
-
-  if (i->getOpcode() != Instruction::PHI) {
-    if (state.memoryState.registerDeferredBasicBlock(ki)) {
-      if (state.memoryState.findLoop()) {
-        terminateStateOnError(state, "infinite loop",
-                              InfiniteLoop);
-      }
-    }
-  }
 
   switch (i->getOpcode()) {
     // Control flow
