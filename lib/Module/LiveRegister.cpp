@@ -50,6 +50,7 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
 
   initializeWorklist(F);
   executeWorklistAlgorithm();
+  propagatePhiUseToLiveSet(F);
 
   attachAnalysisResultAsMetadata(F);
 
@@ -90,6 +91,31 @@ void LiveRegisterPass::executeWorklistAlgorithm() {
     if (!subsetEquals(liveUpdated, predII.live)) {
       predII.live.insert(liveUpdated.begin(), liveUpdated.end());
       addPredecessors(worklist, pred);
+    }
+  }
+}
+
+void LiveRegisterPass::propagatePhiUseToLiveSet(Function &F) {
+  for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
+    BasicBlock &bb = *it;
+    Instruction *term = bb.getTerminator();
+    valueset_t &termLive = getInstructionInfo(term).live;
+    valueset_t &termGen = getInstructionInfo(term).gen;
+
+    // If a register is only used by PHI nodes in all following blocks, it is
+    // included in the gen set of the terminator instruction but was not yet
+    // propagated into its live set. Here, we simply insert all values that are
+    // used by PHI nodes into the terminator instruction's live set.
+    for (Value *value : termGen) {
+      for (auto i = value->use_begin(), e = value->use_end(); i != e; ++i) {
+        if (Instruction *inst = dyn_cast<Instruction>(*i)) {
+          if (inst->getOpcode() == Instruction::PHI) {
+            termLive.insert(value);
+            // we do not need to search any further for this particular value
+            break;
+          }
+        }
+      }
     }
   }
 }
@@ -141,6 +167,26 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
         // exclude registers that are consumed during the annotated basic block
         killed = setMinus(killed, consumed);
 
+        // exclude registers that are used by PHI nodes in annotated basic block
+        for (auto it = std::next(bb.begin()), e = bb.end(); it != e; ++it) {
+          const Instruction &i = *it;
+          if (i.getOpcode() == Instruction::PHI) {
+            const PHINode &phi = cast<PHINode>(i);
+            if (Value *phiOperand = phi.getIncomingValueForBlock(pred)) {
+              killed.erase(phiOperand);
+            }
+          } else {
+            // http://releases.llvm.org/3.4.2/docs/LangRef.html#phi-instruction
+            // "There must be no non-phi instructions between the start of a
+            //  basic block and the PHI instructions: i.e. PHI instructions must
+            //  be first in a basic block."
+            // Thus, we can abort as soon as we encounter a non-PHI instruction
+            // (This is only valid here because in this loop, we skip the nop
+            // instruction we insert as first instruction into each basic block)
+            break;
+          }
+        }
+
         std::vector<Value *> killedVec(killed.begin(), killed.end());
         std::vector<Value *> tuple = {pred, MDNode::get(ctx, killedVec)};
         k.push_back(MDNode::get(ctx, tuple));
@@ -156,13 +202,26 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
   // iterate over all basic blocks
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
-    Instruction *previ = bb.begin();
     // iterate over all instructions within a basic block
     for (BasicBlock::iterator it = bb.begin(), e = bb.end(); it != e; ++it) {
       Instruction *i = &*it;
       instructionIndex[i] = instructions.size();
       instructions.emplace_back();
-      InstructionInfo &ii = instructions.back();
+    }
+  }
+
+  // In the following loop, we assume that each instruction within the function
+  // has a corresponding InstructionInfo entry, which is why we need to iterate
+  // over all instructions twice.
+
+  // iterate over all basic blocks
+  for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
+    BasicBlock &bb = *it;
+    Instruction *previ = bb.begin();
+    // iterate over all instructions within a basic block
+    for (BasicBlock::iterator it = bb.begin(), e = bb.end(); it != e; ++it) {
+      Instruction *i = &*it;
+      InstructionInfo &ii = getInstructionInfo(i);
 
       // generate predecessorEdges
       if (i == bb.begin()) {
@@ -191,7 +250,19 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
       if (i->getNumOperands() != 0) {
         for (auto use = i->op_begin(), e = i->op_end(); use != e; ++use) {
           if (Instruction *op = dyn_cast<Instruction>(use->get())) {
-            ii.gen.insert(op);
+            if (i->getOpcode() == Instruction::PHI) {
+              // PHI nodes: attach operand to gen set of the incoming basic
+              // block's terminator instruction because operands of PHI nodes
+              // are not in general live at the start of the basic block
+              PHINode *phi = cast<PHINode>(i);
+              BasicBlock *incoming = phi->getIncomingBlock(*use);
+              if (Instruction *incomingTerm = incoming->getTerminator()) {
+                InstructionInfo &incomingII = getInstructionInfo(incomingTerm);
+                incomingII.gen.insert(op);
+              }
+            } else {
+              ii.gen.insert(op);
+            }
           }
         }
       }

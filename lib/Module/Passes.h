@@ -216,6 +216,7 @@ private:
 
   void initializeWorklist(llvm::Function &F);
   void executeWorklistAlgorithm();
+  void propagatePhiUseToLiveSet(llvm::Function &F);
 
   void attachAnalysisResultAsMetadata(llvm::Function &F);
 
