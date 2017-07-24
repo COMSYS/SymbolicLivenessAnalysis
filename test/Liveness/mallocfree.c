@@ -10,14 +10,12 @@
 // RUN: not test -f %t-O0.klee-out/test000001.infty.err
 // RUN: cat %t-O0.log | not FileCheck %s
 
-// ---  needs two loop iterations as for loop is not unrolled and we currently do not handle phi nodes correctly
-// ---  FIXME: int i stays live and has to cancel out itself in second loop iteration
 // RUN: rm -rf %t-O1.klee-out
 // RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O1.bc > %t-O1.log 2>&1
 // RUN: test -f %t-O1.klee-out/test000001.infty.err
 // RUN: cat %t-O1.log | FileCheck %s
 // RUN: cat %t-O1.log | FileCheck --check-prefix=CHECK-CORRECT-LOCATION %s
-// RUN: bash -c 'cat %t-O1.log | grep AB | wc -l | { read linecount; test $linecount == 2; }'
+// RUN: bash -c 'cat %t-O1.log | grep AB | wc -l | { read linecount; test $linecount == 1; }'
 
 // RUN: rm -rf %t-O2.klee-out
 // RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O2.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O2.bc > %t-O2.log 2>&1
