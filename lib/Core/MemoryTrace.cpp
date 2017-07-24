@@ -165,7 +165,7 @@ bool MemoryTrace::findLoop() {
         // only influence every fingerprint within the same stack frame and are
         // made after the stack frame base is registered. That is, they are not
         // part of the fingerprints compared in the following.
-        klee_warning_once(stack[topStackFrameBoundary-1].inst,
+        klee_warning_once(trace[topStackFrameBoundary-1].inst,
           "previous stack frame contains global allocation, "
           "aborting search for infinite loops at this location");
         return false;
