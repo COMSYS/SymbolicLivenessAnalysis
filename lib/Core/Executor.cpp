@@ -1585,10 +1585,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       terminateStateOnExit(state);
     } else {
       if (DetectInfiniteLoops) {
+        const llvm::BasicBlock *returningBB = ki->inst->getParent();
+        const llvm::BasicBlock *callerBB = caller->getParent();
         // has to be called before state.popFrame() to update live register
         // information that is only accessible within the stack frame that is to
         // be left
-        state.memoryState.registerPopFrame(&state, ki);
+        state.memoryState.registerPopFrame(&state, returningBB, callerBB);
       }
       state.popFrame();
 

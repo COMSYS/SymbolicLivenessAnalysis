@@ -44,6 +44,7 @@ private:
 
   struct basicBlockInfo {
     const llvm::BasicBlock *bb = nullptr;
+    const llvm::BasicBlock *prevbb = nullptr;
     std::vector<llvm::Value *> liveRegisters;
   } basicBlockInfo;
 
@@ -61,7 +62,8 @@ private:
   void clearLocal(const ExecutionState *state, const KInstruction *kinst);
   void clearLocal(const ExecutionState *state, const llvm::Instruction *inst);
 
-  void removeConsumedLocals(const ExecutionState *state, llvm::BasicBlock *bb,
+  void removeConsumedLocals(const ExecutionState *state,
+                            const llvm::BasicBlock *bb,
                             bool unregister = true);
 
   void registerLocal(const llvm::Instruction *inst, ref<Expr> value);
@@ -135,8 +137,8 @@ public:
 
   void registerBasicBlock(const KInstruction *inst);
   void registerBasicBlock(const ExecutionState *state,
-                          llvm::BasicBlock *dst,
-                          llvm::BasicBlock *src);
+                          const llvm::BasicBlock *dst,
+                          const llvm::BasicBlock *src);
 
   bool findLoop();
 
@@ -151,7 +153,9 @@ public:
   void leaveLibraryFunction(const ObjectState *os);
 
   void registerPushFrame();
-  void registerPopFrame(const ExecutionState *state, KInstruction *ki);
+  void registerPopFrame(const ExecutionState *state,
+                        const llvm::BasicBlock *returningBB,
+                        const llvm::BasicBlock *callerBB);
 
   void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const {
     trace.dumpTrace(out);

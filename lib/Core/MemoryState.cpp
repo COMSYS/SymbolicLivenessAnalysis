@@ -12,6 +12,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Metadata.h"
 
 #include <cmath>
@@ -238,6 +239,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
 
 void MemoryState::populateLiveRegisters(const llvm::BasicBlock *bb) {
   if (basicBlockInfo.bb != bb) {
+    basicBlockInfo.prevbb = basicBlockInfo.bb; // save previous BasicBlock
     basicBlockInfo.bb = bb;
     basicBlockInfo.liveRegisters.clear();
 
@@ -263,13 +265,19 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
 }
 
 void MemoryState::removeConsumedLocals(const ExecutionState *state,
-                                          llvm::BasicBlock *bb,
-                                          bool unregister) {
+                                       const llvm::BasicBlock *bb,
+                                       bool unregister) {
+
+  populateLiveRegisters(bb);
+
+  std::vector<llvm::Value *> consumedRegs;
+
     const llvm::Instruction *ti = bb->getTerminator();
     llvm::MDNode *consumedRegisters = ti->getMetadata("liveregister.consumed");
     if (consumedRegisters != nullptr) {
       for (std::size_t i = 0; i < consumedRegisters->getNumOperands(); ++i) {
         llvm::Value *consumed = consumedRegisters->getOperand(i);
+        consumedRegs.push_back(consumed);
         llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
         if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
           llvm::errs() << "MemoryState: consumed by previous basic block: "
@@ -283,11 +291,48 @@ void MemoryState::removeConsumedLocals(const ExecutionState *state,
         clearLocal(state, inst);
       }
     }
+
+  for (auto it = bb->begin(), e = bb->end(); it != e; ++it) {
+    const llvm::Instruction &i = *it;
+    if (i.getOpcode() == llvm::Instruction::PHI) {
+      for (auto use = i.op_begin(), e = i.op_end(); use != e; ++use) {
+        if (std::find(basicBlockInfo.liveRegisters.begin(),
+                      basicBlockInfo.liveRegisters.end(),
+                      use->get()) != basicBlockInfo.liveRegisters.end())
+        {
+          // register is live, do unregister or clear
+          continue;
+        } else if (std::find(consumedRegs.begin(),
+                             consumedRegs.end(),
+                             use->get()) != consumedRegs.end())
+        {
+          // register is consumed, do unregister or clear
+          continue;
+        } else {
+          llvm::Instruction *inst = dyn_cast<llvm::Instruction>(use->get());
+          if (!inst) continue;
+          if (unregister) {
+            // remove local from delta
+            unregisterLocal(state, inst);
+          }
+          // set local within KLEE to zero to mark them as dead
+          clearLocal(state, inst);
+        }
+      }
+    } else {
+      // http://releases.llvm.org/3.4.2/docs/LangRef.html#phi-instruction
+      // "There must be no non-phi instructions between the start of a basic
+      //  block and the PHI instructions: i.e. PHI instructions must be first
+      //  in a basic block."
+      // Thus, we can abort as soon as we encounter a non-phi instruction
+      break;
+    }
+  }
 }
 
 void MemoryState::registerBasicBlock(const ExecutionState *state,
-                                     llvm::BasicBlock *dst,
-                                     llvm::BasicBlock *src) {
+                                     const llvm::BasicBlock *dst,
+                                     const llvm::BasicBlock *src) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "registerBasicBlock " << dst->getName()
                  << " (coming from " << src->getName() << ")\n";
@@ -545,7 +590,8 @@ void MemoryState::registerPushFrame() {
 }
 
 void MemoryState::registerPopFrame(const ExecutionState *state,
-                                   KInstruction *ki) {
+                                   const llvm::BasicBlock *returningBB,
+                                   const llvm::BasicBlock *callerBB) {
   // has to be called prior to state.popFrame()
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
@@ -559,10 +605,12 @@ void MemoryState::registerPopFrame(const ExecutionState *state,
     // the next step, we have to clear consumed locals within KLEE to be able to
     // determine which variable has already been registered during another call
     // to the function we are currently leaving.
-    removeConsumedLocals(state, ki->inst->getParent(), false);
+    removeConsumedLocals(state, returningBB, false);
 
     // remove delta (locals and arguments) of stack frame that is to be left
     fingerprint.removeDelta();
+
+    populateLiveRegisters(callerBB);
 
     // make locals and arguments "visible" again by
     // applying delta of stack frame that is to be entered
