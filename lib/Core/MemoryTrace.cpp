@@ -27,7 +27,7 @@
 
 
    std::vector<MemoryTraceEntry>
-              stack
+              trace
 
        inst      fingerprint                      std::vector<StackFrameEntry>
    +---------+----------------+                            stackFrames
@@ -52,12 +52,12 @@ namespace klee {
 
 void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
                                      const fingerprint_t &fingerprint) {
-  stack.emplace_back(instruction, fingerprint);
+  trace.emplace_back(instruction, fingerprint);
 }
 
 void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintDelta,
                                           bool globalAllocation) {
-  stackFrames.emplace_back(stack.size(), fingerprintDelta, globalAllocation);
+  stackFrames.emplace_back(trace.size(), fingerprintDelta, globalAllocation);
 }
 
 void MemoryTrace::clear() {
@@ -65,7 +65,7 @@ void MemoryTrace::clear() {
     dumpTrace();
   }
 
-  stack.clear();
+  trace.clear();
   stackFrames.clear();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
@@ -90,7 +90,7 @@ std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
     // delete all PCs and fingerprints of BasicBlocks
     // that are part of current stack frame
     std::size_t index = sfe.index;
-    stack.erase(stack.begin() + index, stack.end());
+    trace.erase(trace.begin() + index, trace.end());
     // there is no need to modify the indices in
     // stackFrames because lower indices stay the same
 
@@ -111,7 +111,7 @@ std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
 bool MemoryTrace::findLoop() {
   if(stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
-    assert(stackFrames.back().index < stack.size() &&
+    assert(stackFrames.back().index < trace.size() &&
       "current stack frame is empty");
   }
 
@@ -123,14 +123,14 @@ bool MemoryTrace::findLoop() {
   }
 
   // calculate number of entries within first stack frame
-  std::size_t topStackFrameEntries = stack.size() - topStackFrameBoundary;
+  std::size_t topStackFrameEntries = trace.size() - topStackFrameBoundary;
 
   // Phase 1:
   // find matching entries within first stack frame
   if (topStackFrameEntries > 1) {
-    MemoryTraceEntry &topEntry = stack.back();
-    auto it = stack.rbegin() + 1; // skip first element
-    for (; it != stack.rbegin() + topStackFrameEntries; ++it) {
+    MemoryTraceEntry &topEntry = trace.back();
+    auto it = trace.rbegin() + 1; // skip first element
+    for (; it != trace.rbegin() + topStackFrameEntries; ++it) {
       // iterate over all elements within the first stack frame (but the first)
       if (topEntry == *it) {
         // found an entry with same PC and fingerprint
@@ -149,7 +149,7 @@ bool MemoryTrace::findLoop() {
   // This entry is called stack frame base and only contains changes to global
   // memory objects and the binding of arguments supplied to a function.
   if(stackFrames.size() > 0) {
-    MemoryTraceEntry &topStackFrameBase = stack.at(topStackFrameBoundary);
+    MemoryTraceEntry &topStackFrameBase = trace.at(topStackFrameBoundary);
 
     for (auto it = stackFrames.rbegin() + 1; it != stackFrames.rend(); ++it) {
       // iterate over all stack frames (but the first)
@@ -171,7 +171,7 @@ bool MemoryTrace::findLoop() {
         return false;
       }
 
-      MemoryTraceEntry &stackFrame = stack.at(it->index);
+      MemoryTraceEntry &stackFrame = trace.at(it->index);
       if (topStackFrameBase == stackFrame) {
         // PC and iterator are the same at stack frame base
 
@@ -187,16 +187,16 @@ bool MemoryTrace::findLoop() {
 }
 
 void MemoryTrace::dumpTrace(llvm::raw_ostream &out) const {
-  if (stack.empty()) {
+  if (trace.empty()) {
     out << "MemoryTrace is empty\n";
   } else {
     std::vector<StackFrameEntry> tmpFrames = stackFrames;
     out << "TOP OF MemoryTrace STACK\n";
-    for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+    for (auto it = trace.rbegin(); it != trace.rend(); ++it) {
       const MemoryTraceEntry &entry = *it;
       const InstructionInfo &ii = *entry.inst->info;
       if (!tmpFrames.empty()) {
-        if ((std::size_t)(stack.rend() - it) == tmpFrames.back().index) {
+        if ((std::size_t)(trace.rend() - it) == tmpFrames.back().index) {
           out << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/"
                        << stackFrames.size() << "\n";
           tmpFrames.pop_back();

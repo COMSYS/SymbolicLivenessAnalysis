@@ -43,7 +43,7 @@ private:
           globalAllocation(globalAllocation) {}
   };
 
-  std::vector<MemoryTraceEntry> stack;
+  std::vector<MemoryTraceEntry> trace;
   std::vector<StackFrameEntry> stackFrames;
 
 public:
