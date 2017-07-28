@@ -18,11 +18,11 @@
    1. registerBasicBlock(inst 1, fingerprint 1);
    2. registerBasicBlock(inst 2, fingerprint 2);
    3. registerBasicBlock(inst 3, fingerprint 3);
-   4. registerEndOfStackFrame(delta 1, true);
+   4. registerEndOfStackFrame(d1, d2, true);
    5. registerBasicBlock(inst 4, fingerprint 4);
    6. registerBasicBlock(inst 5, fingerprint 5);
    7. registerBasicBlock(inst 6, fingerprint 6);
-   8. registerEndOfStackFrame(delta 2, false);
+   8. registerEndOfStackFrame(d3, d4, false);
    9. registerBasicBlock(inst 7, fingerprint 7);
 
 
@@ -32,12 +32,12 @@
        inst      fingerprint                      std::vector<StackFrameEntry>
    +---------+----------------+                            stackFrames
  6 | inst 7  | fingerprint 7  |
- \==<==============<===================<======+     index   delta    glAlloc
- 5 | inst 6  | fingerprint 6  |   \            \  +-------+---------+-------+
-   +---------+----------------+    \            +-|---{ 6 | delta 2 | false | 1
- 4 | inst 5  | fingerprint 5  |     +- Stack-     +-------+---------+-------+
-   +---------+----------------+    /   frame 1  +-|---{ 3 | delta 1 | true  | 0
- 3 | inst 4  | fingerprint 4  |   /            /  +-------+---------+-------+
+ \==<==============<===================<======+     index   deltas..  glAlloc
+ 5 | inst 6  | fingerprint 6  |   \            \  +-------+----------+-------+
+   +---------+----------------+    \            +-|---{ 6 | d3, d4   | false | 1
+ 4 | inst 5  | fingerprint 5  |     +- Stack-     +-------+----------+-------+
+   +---------+----------------+    /   frame 1  +-|---{ 3 | d1, d2   | true  | 0
+ 3 | inst 4  | fingerprint 4  |   /            /  +-------+----------+-------+
  \==<==============<===================<======+         |
  2 | inst 3  | fingerprint 3  |   \                     +- index marks the first
    +---------+----------------+    \                       entry that belongs
@@ -55,9 +55,13 @@ void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
   trace.emplace_back(instruction, fingerprint);
 }
 
-void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintDelta,
+void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintLocalDelta,
+                                          fingerprint_t fingerprintAllocaDelta,
                                           bool globalAllocation) {
-  stackFrames.emplace_back(trace.size(), fingerprintDelta, globalAllocation);
+  stackFrames.emplace_back(trace.size(),
+                           fingerprintLocalDelta,
+                           fingerprintAllocaDelta,
+                           globalAllocation);
 }
 
 void MemoryTrace::clear() {
@@ -77,35 +81,31 @@ std::size_t MemoryTrace::getNumberOfStackFrames() {
   return stackFrames.size();
 }
 
-std::pair<MemoryFingerprint::fingerprint_t,bool> MemoryTrace::popFrame() {
+MemoryTrace::StackFrameEntry MemoryTrace::popFrame() {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
     dumpTrace();
   }
 
-  if (!stackFrames.empty()) {
-    StackFrameEntry &sfe = stackFrames.back();
-    fingerprint_t fingerprintDelta = sfe.fingerprintDelta;
-    bool globalAllocation = sfe.globalAllocation;
+  assert(!stackFrames.empty());
 
-    // delete all PCs and fingerprints of BasicBlocks
-    // that are part of current stack frame
-    std::size_t index = sfe.index;
-    trace.erase(trace.begin() + index, trace.end());
-    // there is no need to modify the indices in
-    // stackFrames because lower indices stay the same
+  MemoryTrace::StackFrameEntry sfe = stackFrames.back();
 
-    // remove topmost stack frame
-    stackFrames.pop_back();
+  // delete all PCs and fingerprints of BasicBlocks
+  // that are part of current stack frame
+  std::size_t index = sfe.index;
+  trace.erase(trace.begin() + index, trace.end());
+  // there is no need to modify the indices in
+  // stackFrames because lower indices stay the same
 
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
-      llvm::errs() << "Popping StackFrame\n";
-      dumpTrace();
-    }
+  // remove topmost stack frame
+  stackFrames.pop_back();
 
-    return std::make_pair(fingerprintDelta, globalAllocation);
+  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+    llvm::errs() << "Popping StackFrame\n";
+    dumpTrace();
   }
 
-  return {};
+  return sfe;
 }
 
 bool MemoryTrace::findLoop() {

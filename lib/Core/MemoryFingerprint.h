@@ -46,11 +46,12 @@ private:
   }
 
   fingerprint_t fingerprint = {};
-  fingerprint_t fingerprintDelta = {};
+  fingerprint_t fingerprintLocalDelta = {};
+  fingerprint_t fingerprintAllocaDelta = {};
 
   template<typename T,
     typename std::enable_if<std::is_same<T, hash_t>::value, int>::type = 0>
-  inline void executeXOR(T &dst, T &src) {
+  inline void executeXOR(T &dst, const T &src) {
     for (std::size_t i = 0; i < hashSize; ++i) {
       dst[i] ^= src[i];
     }
@@ -58,7 +59,7 @@ private:
 
   template<typename T,
     typename std::enable_if<std::is_same<T, dummy_t>::value, int>::type = 0>
-  inline void executeXOR(T &dst, T &src) {
+  inline void executeXOR(T &dst, const T &src) {
     for (auto &elem : src) {
       auto pos = dst.find(elem);
       if (pos == dst.end()) {
@@ -84,38 +85,71 @@ public:
     getDerived().clearHash();
   }
 
-  void applyToFingerprintAndDelta() {
+  void applyToFingerprintLocalDelta() {
     getDerived().generateHash();
+    executeXOR(fingerprintLocalDelta, buffer);
+    // fingerprintLocalDelta is only applied to fingerprint when the whole
+    // fingerprint is requested, see getFingerprint()
+    getDerived().clearHash();
+  }
+
+  void applyToFingerprintAllocaDelta() {
+    getDerived().generateHash();
+    executeXOR(fingerprintAllocaDelta, buffer);
+    // All changes that are applied to alloca deltas are also applied to
+    // fingerprint immediately, since we need to be able to remove just the
+    // allocas of a single stack frame in a simple manner.
     executeXOR(fingerprint, buffer);
-    executeXOR(fingerprintDelta, buffer);
     getDerived().clearHash();
   }
 
   fingerprint_t getFingerprint() {
-    return fingerprint;
+    fingerprint_t result = fingerprint;
+    executeXOR(result, fingerprintLocalDelta);
+    // fingerprintAllocaDelta is already part of fingerprint, no need to XOR
+    return result;
   }
 
-  fingerprint_t getDelta() {
-    return fingerprintDelta;
+  fingerprint_t getLocalDelta() {
+    return fingerprintLocalDelta;
   }
 
-  void removeDelta() {
-    executeXOR(fingerprint, fingerprintDelta);
-    resetDelta();
+  fingerprint_t getAllocaDelta() {
+    return fingerprintAllocaDelta;
   }
 
-  void resetDelta() {
-    fingerprintDelta = {};
+  void applyAndResetAllocaDelta() {
+    // This is trivial as changes made in fingerprintAlloca are already applied
+    // to fingerprint. Thus, we just need to do the reset part.
+    fingerprintAllocaDelta = {};
   }
 
-  void resetEverything() {
-    resetDelta();
+  void setLocalDelta(fingerprint_t localDelta) {
+    fingerprintLocalDelta = localDelta;
+  }
+
+  // WARNING: This function can only be used with an allocaDelta that has been
+  // created and modified using the current instance of MemoryFingerprint, as
+  // it assumes that every change recorded in allocaDelta has also been applied
+  // to fingerprint.
+  void setAllocaDelta(fingerprint_t allocaDelta) {
+    // TODO: write separate dummy method that actually checks this assumption?
+    fingerprintAllocaDelta = allocaDelta;
+  }
+
+  void discardLocalDelta() {
+    fingerprintLocalDelta = {};
+  }
+
+  void discardAllocaDelta() {
+    executeXOR(fingerprint, fingerprintAllocaDelta);
+    fingerprintAllocaDelta = {};
+  }
+
+  void discardEverything() {
+    fingerprintLocalDelta = {};
+    fingerprintAllocaDelta = {};
     fingerprint = {};
-  }
-
-  void applyDelta(fingerprint_t &delta) {
-    executeXOR(fingerprint, delta);
-    executeXOR(fingerprintDelta, delta);
   }
 
   void updateConstantExpr(const ConstantExpr &expr) {
@@ -152,8 +186,12 @@ public:
     return toString(fingerprint);
   }
 
-  std::string getDeltaAsString() {
-    return toString(fingerprintDelta);
+  std::string getLocalDeltaAsString() {
+    return toString(fingerprintLocalDelta);
+  }
+
+  std::string getAllocaDeltaAsString() {
+    return toString(fingerprintAllocaDelta);
   }
 };
 

@@ -3,7 +3,6 @@
 
 #include "klee/Internal/Module/KInstruction.h"
 
-#include <utility>
 #include <vector>
 
 namespace klee {
@@ -29,20 +28,28 @@ private:
     bool operator!=(const MemoryTraceEntry &rhs) { return !(operator==(rhs)); }
   };
 
+public:
   struct StackFrameEntry {
     // first index in stack that belongs to next stack frame
     std::size_t index;
     // locals and arguments only visible within this stack frame
-    fingerprint_t fingerprintDelta;
+    fingerprint_t fingerprintLocalDelta;
+    // allocas allocated in this stack frame
+    fingerprint_t fingerprintAllocaDelta;
     // did this stack frame contain any global allocation?
     bool globalAllocation;
 
     StackFrameEntry(std::size_t index,
-                    fingerprint_t fingerprintDelta, bool globalAllocation)
-        : index(index), fingerprintDelta(fingerprintDelta),
+                    fingerprint_t fingerprintLocalDelta,
+                    fingerprint_t fingerprintAllocaDelta,
+                    bool globalAllocation)
+        : index(index),
+          fingerprintLocalDelta(fingerprintLocalDelta),
+          fingerprintAllocaDelta(fingerprintAllocaDelta),
           globalAllocation(globalAllocation) {}
   };
 
+private:
   std::vector<MemoryTraceEntry> trace;
   std::vector<StackFrameEntry> stackFrames;
 
@@ -52,9 +59,10 @@ public:
 
   void registerBasicBlock(const KInstruction *instruction,
                           const fingerprint_t &fingerprint);
-  void registerEndOfStackFrame(fingerprint_t fingerprintDelta,
+  void registerEndOfStackFrame(fingerprint_t fingerprintLocalDelta,
+                               fingerprint_t fingerprintAllocaDelta,
                                bool globalAllocation);
-  std::pair<fingerprint_t,bool> popFrame();
+  StackFrameEntry popFrame();
   bool findLoop();
   void clear();
   std::size_t getNumberOfStackFrames();

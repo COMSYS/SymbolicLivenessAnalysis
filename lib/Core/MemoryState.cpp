@@ -23,7 +23,7 @@ namespace klee {
 
 void MemoryState::clearEverything() {
   trace.clear();
-  fingerprint.resetEverything();
+  fingerprint.discardEverything();
 }
 
 void MemoryState::registerExternalFunctionCall() {
@@ -35,11 +35,10 @@ void MemoryState::registerExternalFunctionCall() {
     llvm::errs() << "MemoryState: external function call\n";
   }
 
-  // it is unknown whether control flow is changed by an external function
+  // it is unknown whether control flow is changed by an external function, so
+  // we cannot detect infinite loop iterations that started before this call
   trace.clear();
-
-  // make all previous changes to fingerprint permanent
-  fingerprint.resetDelta();
+  fingerprint.discardEverything();
 }
 
 void MemoryState::registerAllocation(const MemoryObject &mo) {
@@ -48,7 +47,7 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   fingerprint.updateUint64(mo.size);
 
   if (mo.isLocal) {
-    fingerprint.applyToFingerprintAndDelta();
+    fingerprint.applyToFingerprintAllocaDelta();
   } else {
     fingerprint.applyToFingerprint();
   }
@@ -129,7 +128,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     }
 
     if (mo.isLocal) {
-      fingerprint.applyToFingerprintAndDelta();
+      fingerprint.applyToFingerprintAllocaDelta();
     } else {
       fingerprint.applyToFingerprint();
     }
@@ -204,7 +203,7 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
     fingerprint.updateExpr(value);
   }
 
-  fingerprint.applyToFingerprintAndDelta();
+  fingerprint.applyToFingerprintLocalDelta();
 }
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
@@ -225,7 +224,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
     fingerprint.updateExpr(value);
   }
 
-  fingerprint.applyToFingerprintAndDelta();
+  fingerprint.applyToFingerprintLocalDelta();
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: adding argument " << index << " to function "
@@ -574,11 +573,15 @@ void MemoryState::registerPushFrame() {
     llvm::errs() << "MemoryState: PUSHFRAME\n";
   }
 
-  trace.registerEndOfStackFrame(fingerprint.getDelta(),
+  trace.registerEndOfStackFrame(fingerprint.getLocalDelta(),
+                                fingerprint.getAllocaDelta(),
                                 globalAllocationsInCurrentStackFrame);
 
   // make locals and arguments "invisible"
-  fingerprint.removeDelta();
+  fingerprint.discardLocalDelta();
+  // record alloca allocations and changes for this new stack frame separately
+  // from those of other stack frames (without removing the latter)
+  fingerprint.applyAndResetAllocaDelta();
 
   // reset stack frame specific information
   globalAllocationsInCurrentStackFrame = false;
@@ -592,7 +595,7 @@ void MemoryState::registerPushFrame() {
 void MemoryState::registerPopFrame(const ExecutionState *state,
                                    const llvm::BasicBlock *returningBB,
                                    const llvm::BasicBlock *callerBB) {
-  // has to be called prior to state.popFrame()
+  // IMPORTANT: has to be called prior to state.popFrame()
 
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: POPFRAME\n"
@@ -607,20 +610,30 @@ void MemoryState::registerPopFrame(const ExecutionState *state,
     // to the function we are currently leaving.
     removeConsumedLocals(state, returningBB, false);
 
-    // remove delta (locals and arguments) of stack frame that is to be left
-    fingerprint.removeDelta();
+    MemoryTrace::StackFrameEntry previousFrame = trace.popFrame();
+
+    // remove locals and arguments of stack frame that is to be left
+    fingerprint.discardLocalDelta();
+    // set local delta to fingerprint local delta of stack frame that is to be
+    // entered to make locals and arguments "visible" again
+    fingerprint.setLocalDelta(previousFrame.fingerprintLocalDelta);
+
+    // remove allocas allocated in stack frame that is to be left
+    fingerprint.discardAllocaDelta();
+    // initialize alloca delta with previous fingerprint alloca delta which
+    // contains information on allocas allocated in the stack frame that is to
+    // be entered
+    fingerprint.setAllocaDelta(previousFrame.fingerprintAllocaDelta);
 
     populateLiveRegisters(callerBB);
 
-    // make locals and arguments "visible" again by
-    // applying delta of stack frame that is to be entered
-    auto previousFrame = trace.popFrame();
-    fingerprint.applyDelta(previousFrame.first);
-
-    globalAllocationsInCurrentStackFrame = previousFrame.second;
+    globalAllocationsInCurrentStackFrame = previousFrame.globalAllocation;
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-      llvm::errs() << "reapplying delta: " << fingerprint.getDeltaAsString()
+      llvm::errs() << "reapplying local delta: "
+                   << fingerprint.getLocalDeltaAsString()
+                   << "reapplying alloca delta: "
+                   << fingerprint.getAllocaDeltaAsString()
                    << "\nGlobal Alloc: " << globalAllocationsInCurrentStackFrame
                    << "\nFingerprint: " << fingerprint.getFingerprintAsString()
                    << "\n";
