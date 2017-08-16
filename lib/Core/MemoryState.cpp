@@ -43,6 +43,10 @@ void MemoryState::registerExternalFunctionCall() {
 
 void MemoryState::registerAllocation(const ExecutionState &state,
                                      const MemoryObject &mo) {
+  if (libraryFunction.entered || outputFunction.entered) {
+    return;
+  }
+
   fingerprint.updateUint8(1);
   fingerprint.updateUint64(mo.address);
   fingerprint.updateUint64(mo.size);
