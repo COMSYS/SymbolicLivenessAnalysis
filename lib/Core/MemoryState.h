@@ -27,6 +27,7 @@ class MemoryState {
 private:
   MemoryFingerprint fingerprint;
   MemoryTrace trace;
+  const ExecutionState &executionState;
   bool globalAllocationsInCurrentStackFrame = false;
 
   struct outputFunction {
@@ -51,26 +52,18 @@ private:
   static std::string ExprString(ref<Expr> expr);
 
   void populateLiveRegisters(const llvm::BasicBlock *bb);
-  KInstruction *getKInstruction(const ExecutionState *state,
-                                const llvm::BasicBlock* bb);
-  KInstruction *getKInstruction(const ExecutionState *state,
-                                const llvm::Instruction* inst);
-  ref<Expr> getLocalValue(const ExecutionState *state,
-                          const KInstruction *kinst);
-  ref<Expr> getLocalValue(const ExecutionState *state,
-                          const llvm::Instruction *inst);
-  void clearLocal(const ExecutionState *state, const KInstruction *kinst);
-  void clearLocal(const ExecutionState *state, const llvm::Instruction *inst);
+  KInstruction *getKInstruction(const llvm::BasicBlock* bb);
+  KInstruction *getKInstruction(const llvm::Instruction* inst);
+  ref<Expr> getLocalValue(const KInstruction *kinst);
+  ref<Expr> getLocalValue(const llvm::Instruction *inst);
+  void clearLocal(const KInstruction *kinst);
+  void clearLocal(const llvm::Instruction *inst);
 
-  void removeConsumedLocals(const ExecutionState *state,
-                            const llvm::BasicBlock *bb,
-                            bool unregister = true);
+  void removeConsumedLocals(const llvm::BasicBlock *bb, bool unregister = true);
 
   void registerLocal(const llvm::Instruction *inst, ref<Expr> value);
-  void unregisterLocal(const ExecutionState *state,
-                       const llvm::Instruction *inst)
-  {
-    ref<Expr> value = getLocalValue(state, inst);
+  void unregisterLocal(const llvm::Instruction *inst) {
+    ref<Expr> value = getLocalValue(inst);
     if (!value.isNull()) {
       registerLocal(inst, value);
 
@@ -84,14 +77,18 @@ private:
   }
 
 public:
-  MemoryState() = default;
-  MemoryState(const MemoryState &) = default;
+  MemoryState() = delete;
+  MemoryState(const MemoryState &) = delete;
+  MemoryState& operator=(const MemoryState&) = delete;
+
+  MemoryState(const ExecutionState &state) : executionState(state) {}
+  MemoryState(const MemoryState &, const ExecutionState &state)
+    : executionState(state) {}
 
   void clearEverything();
 
-  void registerAllocation(const ExecutionState &state, const MemoryObject &mo);
-  void registerDeallocation(const ExecutionState &state, const MemoryObject &mo)
-  {
+  void registerAllocation(const MemoryObject &mo);
+  void registerDeallocation(const MemoryObject &mo) {
     if (libraryFunction.entered || outputFunction.entered) {
       return;
     }
@@ -99,19 +96,17 @@ public:
       llvm::errs() << "MemoryState: DEALLOCATION\n";
     }
 
-    registerAllocation(state, mo);
+    registerAllocation(mo);
   }
 
-  void registerWrite(const ExecutionState &state, ref<Expr> address,
-                     const MemoryObject &mo, const ObjectState &os,
-                     std::size_t bytes);
-  void registerWrite(const ExecutionState &state, ref<Expr> address,
-                     const MemoryObject &mo, const ObjectState &os) {
-    registerWrite(state, address, mo, os, os.size);
+  void registerWrite(ref<Expr> address, const MemoryObject &mo,
+                     const ObjectState &os, std::size_t bytes);
+  void registerWrite(ref<Expr> address, const MemoryObject &mo,
+                     const ObjectState &os) {
+    registerWrite(address, mo, os, os.size);
   }
-  void unregisterWrite(const ExecutionState &state, ref<Expr> address,
-                       const MemoryObject &mo, const ObjectState &os,
-                       std::size_t bytes) {
+  void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
+                       const ObjectState &os, std::size_t bytes) {
     if (libraryFunction.entered || outputFunction.entered) {
       return;
     }
@@ -119,11 +114,10 @@ public:
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
 
-    registerWrite(state, address, mo, os, bytes);
+    registerWrite(address, mo, os, bytes);
   }
-  void unregisterWrite(const ExecutionState &state, const MemoryObject &mo,
-                       const ObjectState &os) {
-    unregisterWrite(state, mo.getBaseExpr(), mo, os, os.size);
+  void unregisterWrite(const MemoryObject &mo, const ObjectState &os) {
+    unregisterWrite(mo.getBaseExpr(), mo, os, os.size);
   }
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
@@ -143,8 +137,7 @@ public:
   void registerExternalFunctionCall();
 
   void registerBasicBlock(const KInstruction *inst);
-  void registerBasicBlock(const ExecutionState *state,
-                          const llvm::BasicBlock *dst,
+  void registerBasicBlock(const llvm::BasicBlock *dst,
                           const llvm::BasicBlock *src);
 
   bool findLoop();
@@ -153,16 +146,14 @@ public:
   void leaveOutputFunction();
   bool isInOutputFunction(llvm::Function *f);
 
-  bool enterLibraryFunction(const ExecutionState &state, llvm::Function *f,
-    ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
-    std::size_t bytes);
+  bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
+    const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
   bool isInLibraryFunction(llvm::Function *f);
   const MemoryObject *getLibraryFunctionMemoryObject();
-  void leaveLibraryFunction(const ExecutionState &state, const ObjectState *os);
+  void leaveLibraryFunction(const ObjectState *os);
 
   void registerPushFrame(const KFunction *kf);
-  void registerPopFrame(const ExecutionState *state,
-                        const llvm::BasicBlock *returningBB,
+  void registerPopFrame(const llvm::BasicBlock *returningBB,
                         const llvm::BasicBlock *callerBB);
 
   void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const {

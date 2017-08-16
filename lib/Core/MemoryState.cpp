@@ -41,8 +41,7 @@ void MemoryState::registerExternalFunctionCall() {
   fingerprint.discardEverything();
 }
 
-void MemoryState::registerAllocation(const ExecutionState &state,
-                                     const MemoryObject &mo) {
+void MemoryState::registerAllocation(const MemoryObject &mo) {
   if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
@@ -52,9 +51,9 @@ void MemoryState::registerAllocation(const ExecutionState &state,
   fingerprint.updateUint64(mo.size);
 
   if (mo.isLocal) {
-    if (!trace.isAllocaAllocationInCurrentStackFrame(state, mo)) {
+    if (!trace.isAllocaAllocationInCurrentStackFrame(executionState, mo)) {
       MemoryFingerprint::fingerprint_t *externalDelta;
-      externalDelta = trace.findAllocaAllocationStackFrame(state, mo);
+      externalDelta = trace.findAllocaAllocationStackFrame(executionState, mo);
       if (externalDelta == nullptr) {
         fingerprint.applyToFingerprint();
       } else {
@@ -75,9 +74,8 @@ void MemoryState::registerAllocation(const ExecutionState &state,
   }
 }
 
-void MemoryState::registerWrite(const ExecutionState &state, ref<Expr> address,
-                                const MemoryObject &mo, const ObjectState &os,
-                                std::size_t bytes) {
+void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
+                                const ObjectState &os, std::size_t bytes) {
   if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
@@ -102,8 +100,8 @@ void MemoryState::registerWrite(const ExecutionState &state, ref<Expr> address,
 
   if (mo.isLocal) {
     isLocal = true;
-    if (!trace.isAllocaAllocationInCurrentStackFrame(state, mo)) {
-      externalDelta = trace.findAllocaAllocationStackFrame(state, mo);
+    if (!trace.isAllocaAllocationInCurrentStackFrame(executionState, mo)) {
+      externalDelta = trace.findAllocaAllocationStackFrame(executionState, mo);
       if (externalDelta == nullptr) {
         isLocal = false;
       }
@@ -294,8 +292,7 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
   trace.registerBasicBlock(inst, fingerprint.getFingerprint());
 }
 
-void MemoryState::removeConsumedLocals(const ExecutionState *state,
-                                       const llvm::BasicBlock *bb,
+void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
                                        bool unregister) {
 
   populateLiveRegisters(bb);
@@ -315,10 +312,10 @@ void MemoryState::removeConsumedLocals(const ExecutionState *state,
         }
         if (unregister) {
           // remove local from delta
-          unregisterLocal(state, inst);
+          unregisterLocal(inst);
         }
         // set local within KLEE to zero to mark them as dead
-        clearLocal(state, inst);
+        clearLocal(inst);
       }
     }
 
@@ -343,10 +340,10 @@ void MemoryState::removeConsumedLocals(const ExecutionState *state,
           if (!inst) continue;
           if (unregister) {
             // remove local from delta
-            unregisterLocal(state, inst);
+            unregisterLocal(inst);
           }
           // set local within KLEE to zero to mark them as dead
-          clearLocal(state, inst);
+          clearLocal(inst);
         }
       }
     } else {
@@ -360,15 +357,14 @@ void MemoryState::removeConsumedLocals(const ExecutionState *state,
   }
 }
 
-void MemoryState::registerBasicBlock(const ExecutionState *state,
-                                     const llvm::BasicBlock *dst,
+void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
                                      const llvm::BasicBlock *src) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "registerBasicBlock " << dst->getName()
                  << " (coming from " << src->getName() << ")\n";
   }
 
-  removeConsumedLocals(state, src);
+  removeConsumedLocals(src);
 
   populateLiveRegisters(dst);
 
@@ -428,8 +424,8 @@ void MemoryState::registerBasicBlock(const ExecutionState *state,
             llvm::errs() << "MemoryState: not live anymore: "
                          << inst->getName() << "\n";
           }
-          unregisterLocal(state, inst);
-          clearLocal(state, inst);
+          unregisterLocal(inst);
+          clearLocal(inst);
         }
 
         // correct edge was found, loop can be terminated
@@ -438,24 +434,20 @@ void MemoryState::registerBasicBlock(const ExecutionState *state,
     }
   }
 
-  registerBasicBlock(getKInstruction(state, dst));
+  registerBasicBlock(getKInstruction(dst));
 }
 
-KInstruction *MemoryState::getKInstruction(const ExecutionState *state,
-                                           const llvm::BasicBlock* bb)
-{
-  KFunction *kf = state->stack.back().kf;
+KInstruction *MemoryState::getKInstruction(const llvm::BasicBlock* bb) {
+  KFunction *kf = executionState.stack.back().kf;
   unsigned entry = kf->basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)];
   return kf->instructions[entry];
 }
 
-KInstruction *MemoryState::getKInstruction(const ExecutionState *state,
-                                           const llvm::Instruction* inst)
-{
+KInstruction *MemoryState::getKInstruction(const llvm::Instruction* inst) {
   // FIXME: ugly hack
   llvm::BasicBlock *bb = const_cast<llvm::BasicBlock *>(inst->getParent());
   if (bb != nullptr) {
-    KFunction *kf = state->stack.back().kf;
+    KFunction *kf = executionState.stack.back().kf;
     if (kf != nullptr) {
       unsigned entry = kf->basicBlockEntry[bb];
       while ((entry + 1) < kf->numInstructions
@@ -469,37 +461,29 @@ KInstruction *MemoryState::getKInstruction(const ExecutionState *state,
   return nullptr;
 }
 
-ref<Expr> MemoryState::getLocalValue(const ExecutionState *state,
-                                const KInstruction *kinst)
-{
-  return state->stack.back().locals[kinst->dest].value;
+ref<Expr> MemoryState::getLocalValue(const KInstruction *kinst) {
+  return executionState.stack.back().locals[kinst->dest].value;
 }
 
-ref<Expr> MemoryState::getLocalValue(const ExecutionState *state,
-                                const llvm::Instruction *inst)
-{
-  KInstruction *kinst = getKInstruction(state, inst);
+ref<Expr> MemoryState::getLocalValue(const llvm::Instruction *inst) {
+  KInstruction *kinst = getKInstruction(inst);
   if (kinst != nullptr) {
-    return getLocalValue(state, kinst);
+    return getLocalValue(kinst);
   }
   return nullptr;
 }
 
-void MemoryState::clearLocal(const ExecutionState *state,
-                             const KInstruction *kinst)
-{
-  state->stack.back().locals[kinst->dest].value = nullptr;
-  assert(getLocalValue(state, kinst).isNull());
+void MemoryState::clearLocal(const KInstruction *kinst) {
+  executionState.stack.back().locals[kinst->dest].value = nullptr;
+  assert(getLocalValue(kinst).isNull());
 }
 
-void MemoryState::clearLocal(const ExecutionState *state,
-                             const llvm::Instruction *inst)
-{
-  KInstruction *kinst = getKInstruction(state, inst);
+void MemoryState::clearLocal(const llvm::Instruction *inst) {
+  KInstruction *kinst = getKInstruction(inst);
   if (kinst != nullptr) {
-    clearLocal(state, kinst);
+    clearLocal(kinst);
   }
-  assert(getLocalValue(state, inst).isNull());
+  assert(getLocalValue(inst).isNull());
 }
 
 
@@ -553,10 +537,9 @@ bool MemoryState::isInOutputFunction(llvm::Function *f) {
   return (outputFunction.entered && f == outputFunction.function);
 }
 
-bool MemoryState::enterLibraryFunction(const ExecutionState &state,
-  llvm::Function *f, ref<ConstantExpr> address, const MemoryObject *mo,
-  const ObjectState *os, std::size_t bytes)
-{
+bool MemoryState::enterLibraryFunction(llvm::Function *f,
+  ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
+  std::size_t bytes) {
   if (libraryFunction.entered) {
     // we can only enter one library function at a time
     klee_warning_once(f, "already entered a library function");
@@ -568,7 +551,7 @@ bool MemoryState::enterLibraryFunction(const ExecutionState &state,
                  << f->getName() << "\n";
   }
 
-  unregisterWrite(state, address, *mo, *os, bytes);
+  unregisterWrite(address, *mo, *os, bytes);
 
   libraryFunction.entered = true;
   libraryFunction.function = f;
@@ -587,9 +570,7 @@ const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
   return libraryFunction.mo;
 }
 
-void MemoryState::leaveLibraryFunction(const ExecutionState &state,
-  const ObjectState *os)
-{
+void MemoryState::leaveLibraryFunction(const ObjectState *os) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: leaving library function: "
                  << libraryFunction.function->getName() << "\n";
@@ -598,7 +579,7 @@ void MemoryState::leaveLibraryFunction(const ExecutionState &state,
   libraryFunction.entered = false;
   libraryFunction.function = nullptr;
 
-  registerWrite(state, libraryFunction.address, *libraryFunction.mo, *os,
+  registerWrite(libraryFunction.address, *libraryFunction.mo, *os,
     libraryFunction.bytes);
 }
 
@@ -627,8 +608,7 @@ void MemoryState::registerPushFrame(const KFunction *kf) {
   }
 }
 
-void MemoryState::registerPopFrame(const ExecutionState *state,
-                                   const llvm::BasicBlock *returningBB,
+void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
                                    const llvm::BasicBlock *callerBB) {
   // IMPORTANT: has to be called prior to state.popFrame()
 
@@ -643,7 +623,7 @@ void MemoryState::registerPopFrame(const ExecutionState *state,
     // the next step, we have to clear consumed locals within KLEE to be able to
     // determine which variable has already been registered during another call
     // to the function we are currently leaving.
-    removeConsumedLocals(state, returningBB, false);
+    removeConsumedLocals(returningBB, false);
 
     MemoryTrace::StackFrameEntry sfe = trace.popFrame();
 

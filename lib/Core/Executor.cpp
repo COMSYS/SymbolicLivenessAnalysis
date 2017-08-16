@@ -1223,8 +1223,7 @@ void Executor::executeCall(ExecutionState &state,
           std::uint64_t offset = addr - mo->address;
 
           if (mo->size >= offset + count) {
-            state.memoryState.enterLibraryFunction(state, f, constAddr, mo, os,
-              count);
+            state.memoryState.enterLibraryFunction(f, constAddr, mo, os, count);
           }
         }
       }
@@ -1476,7 +1475,7 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     // registerBasicBlock updates live register information, thus we need to
     // call registerBasicBlock on every BasicBlock change, not only on ones to
     // a BasicBlock with more than one predecessor
-    state.memoryState.registerBasicBlock(&state, dst, src);
+    state.memoryState.registerBasicBlock(dst, src);
     if (dst->getSinglePredecessor() == nullptr) {
       // more than one predecessor
       if (state.memoryState.findLoop()) {
@@ -1569,7 +1568,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         const MemoryObject *mo =
           state.memoryState.getLibraryFunctionMemoryObject();
         const ObjectState *os = state.addressSpace.findObject(mo);
-        state.memoryState.leaveLibraryFunction(state, os);
+        state.memoryState.leaveLibraryFunction(os);
       } else if (state.memoryState.isInOutputFunction(callee)) {
         state.memoryState.leaveOutputFunction();
       }
@@ -1589,7 +1588,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         // has to be called before state.popFrame() to update live register
         // information that is only accessible within the stack frame that is to
         // be left
-        state.memoryState.registerPopFrame(&state, returningBB, callerBB);
+        state.memoryState.registerPopFrame(returningBB, callerBB);
       }
       state.popFrame();
 
@@ -3159,7 +3158,7 @@ void Executor::callExternalFunction(ExecutionState &state,
       const MemoryObject *mo =
         state.memoryState.getLibraryFunctionMemoryObject();
       const ObjectState *os = state.addressSpace.findObject(mo);
-      state.memoryState.leaveLibraryFunction(state, os);
+      state.memoryState.leaveLibraryFunction(os);
     } else if (state.memoryState.isInOutputFunction(function)) {
       state.memoryState.leaveOutputFunction();
     }
@@ -3240,7 +3239,7 @@ void Executor::executeAlloc(ExecutionState &state,
       if (DetectInfiniteLoops) {
         // execute bindObjectInState first to make sure that local allocations
         // are included in the allocas list of the current stack frame
-        state.memoryState.registerAllocation(state, *mo);
+        state.memoryState.registerAllocation(*mo);
       }
       if (zeroMemory) {
         os->initializeToZero();
@@ -3249,7 +3248,7 @@ void Executor::executeAlloc(ExecutionState &state,
       }
 
       if (DetectInfiniteLoops) {
-        state.memoryState.registerWrite(state, mo->getBaseExpr(), *mo, *os);
+        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
       }
       bindLocal(target, state, mo->getBaseExpr());
       
@@ -3259,7 +3258,7 @@ void Executor::executeAlloc(ExecutionState &state,
           os->write(i, reallocFrom->read8(i));
         const MemoryObject *reallocatedObject = reallocFrom->getObject();
         if (DetectInfiniteLoops) {
-          state.memoryState.registerDeallocation(state, *reallocatedObject);
+          state.memoryState.registerDeallocation(*reallocatedObject);
         }
         state.addressSpace.unbindObject(reallocatedObject);
       }
@@ -3366,8 +3365,8 @@ void Executor::executeFree(ExecutionState &state,
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
-        it->second->memoryState.unregisterWrite(*it->second, *mo, *os);
-        it->second->memoryState.registerDeallocation(*it->second, *mo);
+        it->second->memoryState.unregisterWrite(*mo, *os);
+        it->second->memoryState.registerDeallocation(*mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, Expr::createPointer(0));
@@ -3462,11 +3461,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           if (DetectInfiniteLoops) {
             // unregister previous value to avoid cancellation
-            state.memoryState.unregisterWrite(state, address, *mo, *wos, bytes);
+            state.memoryState.unregisterWrite(address, *mo, *wos, bytes);
           }
           wos->write(offset, value);
           if (DetectInfiniteLoops) {
-            state.memoryState.registerWrite(state, address, *mo, *wos, bytes);
+            state.memoryState.registerWrite(address, *mo, *wos, bytes);
           }
         }          
       } else {
@@ -3512,11 +3511,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           if (DetectInfiniteLoops) {
             // unregister previous value to avoid cancellation
-            bound->memoryState.unregisterWrite(*bound, address, *mo, *wos, bytes);
+            bound->memoryState.unregisterWrite(address, *mo, *wos, bytes);
           }
           wos->write(mo->getOffsetExpr(address), value);
           if (DetectInfiniteLoops) {
-            bound->memoryState.registerWrite(*bound, address, *mo, *wos, bytes);
+            bound->memoryState.registerWrite(address, *mo, *wos, bytes);
           }
         }
       } else {

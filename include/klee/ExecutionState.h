@@ -153,7 +153,7 @@ public:
   std::vector<ref<MergeHandler> > openMergeStack;
 
 private:
-  ExecutionState() : ptreeNode(0) {}
+  ExecutionState() : ptreeNode(0), memoryState(memoryState, *this) {}
 
 public:
   ExecutionState(KFunction *kf);
