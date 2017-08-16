@@ -172,6 +172,9 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
   size_t allocations = 0;
   size_t writes = 0;
 
+  // show individual memory operations in detail: writes (per byte), allocations
+  bool showMemoryOperations = false;
+
   result << "{";
 
   for (auto it = fingerprint.begin(); it != fingerprint.end(); ++it) {
@@ -181,9 +184,46 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
     bool output = false;
     switch (id) {
       case 1:
+        if (showMemoryOperations) {
+          std::uint64_t addr;
+          std::uint64_t size;
+
+          item >> addr >> size;
+
+          result << "Alloc: ";
+          result << addr;
+          result << " (size: ";
+          result << size;
+          result << ")";
+
+          output = true;
+        }
         allocations++;
         break;
       case 2:
+        if (showMemoryOperations) {
+          std::uint64_t baseaddr;
+          std::uint64_t offset;
+          std::uint8_t isSymbolic;
+
+          item >> baseaddr >> offset >> isSymbolic;
+
+          result << "Write: ";
+          result << baseaddr;
+          result << " + " << offset;
+          result << " = ";
+
+          if (isSymbolic) {
+            std::string value;
+            item >> value;
+            result << value;
+          } else {
+            std::uint8_t value;
+            item >> value;
+            result << value;
+          }
+          output = true;
+        }
         writes++;
         break;
       case 3: {
@@ -243,7 +283,12 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
     }
   }
 
-  result << "} + " << allocations << " allocation(s) + " << writes << " write(s)";
+  if (!showMemoryOperations) {
+    result << "} + " << allocations << " allocation(s) + " << writes
+           << " write(s)";
+  } else {
+    result << "}";
+  }
 
   return result.str();
 }
