@@ -1223,7 +1223,8 @@ void Executor::executeCall(ExecutionState &state,
           std::uint64_t offset = addr - mo->address;
 
           if (mo->size >= offset + count) {
-            state.memoryState.enterLibraryFunction(f, constAddr, mo, os, count);
+            state.memoryState.enterLibraryFunction(state, f, constAddr, mo, os,
+              count);
           }
         }
       }
@@ -1344,10 +1345,11 @@ void Executor::executeCall(ExecutionState &state,
     // instead of the actual instruction, since we can't make a KInstIterator
     // from just an instruction (unlike LLVM).
     KFunction *kf = kmodule->functionMap[f];
+    KFunction *leavingFunction = state.stack.back().kf;
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
     if (DetectInfiniteLoops) {
-      state.memoryState.registerPushFrame();
+      state.memoryState.registerPushFrame(leavingFunction);
     }
 
     if (statsTracker)
@@ -1570,7 +1572,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         const MemoryObject *mo =
           state.memoryState.getLibraryFunctionMemoryObject();
         const ObjectState *os = state.addressSpace.findObject(mo);
-        state.memoryState.leaveLibraryFunction(os);
+        state.memoryState.leaveLibraryFunction(state, os);
       } else if (state.memoryState.isInOutputFunction(callee)) {
         state.memoryState.leaveOutputFunction();
       }
@@ -3160,7 +3162,7 @@ void Executor::callExternalFunction(ExecutionState &state,
       const MemoryObject *mo =
         state.memoryState.getLibraryFunctionMemoryObject();
       const ObjectState *os = state.addressSpace.findObject(mo);
-      state.memoryState.leaveLibraryFunction(os);
+      state.memoryState.leaveLibraryFunction(state, os);
     } else if (state.memoryState.isInOutputFunction(function)) {
       state.memoryState.leaveOutputFunction();
     }
@@ -3238,7 +3240,7 @@ void Executor::executeAlloc(ExecutionState &state,
                 ConstantExpr::alloc(0, Context::get().getPointerWidth()));
     } else {
       if (DetectInfiniteLoops) {
-        state.memoryState.registerAllocation(*mo);
+        state.memoryState.registerAllocation(state, *mo);
       }
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
@@ -3248,7 +3250,7 @@ void Executor::executeAlloc(ExecutionState &state,
       }
 
       if (DetectInfiniteLoops) {
-        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
+        state.memoryState.registerWrite(state, mo->getBaseExpr(), *mo, *os);
       }
       bindLocal(target, state, mo->getBaseExpr());
       
@@ -3258,7 +3260,7 @@ void Executor::executeAlloc(ExecutionState &state,
           os->write(i, reallocFrom->read8(i));
         const MemoryObject *reallocatedObject = reallocFrom->getObject();
         if (DetectInfiniteLoops) {
-          state.memoryState.registerDeallocation(*reallocatedObject);
+          state.memoryState.registerDeallocation(state, *reallocatedObject);
         }
         state.addressSpace.unbindObject(reallocatedObject);
       }
@@ -3365,8 +3367,8 @@ void Executor::executeFree(ExecutionState &state,
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
-        it->second->memoryState.unregisterWrite(*mo, *os);
-        it->second->memoryState.registerDeallocation(*mo);
+        it->second->memoryState.unregisterWrite(*it->second, *mo, *os);
+        it->second->memoryState.registerDeallocation(*it->second, *mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, Expr::createPointer(0));
@@ -3461,11 +3463,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           if (DetectInfiniteLoops) {
             // unregister previous value to avoid cancellation
-            state.memoryState.unregisterWrite(address, *mo, *wos, bytes);
+            state.memoryState.unregisterWrite(state, address, *mo, *wos, bytes);
           }
           wos->write(offset, value);
           if (DetectInfiniteLoops) {
-            state.memoryState.registerWrite(address, *mo, *wos, bytes);
+            state.memoryState.registerWrite(state, address, *mo, *wos, bytes);
           }
         }          
       } else {
@@ -3511,11 +3513,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           if (DetectInfiniteLoops) {
             // unregister previous value to avoid cancellation
-            state.memoryState.unregisterWrite(address, *mo, *wos, bytes);
+            bound->memoryState.unregisterWrite(*bound, address, *mo, *wos, bytes);
           }
           wos->write(mo->getOffsetExpr(address), value);
           if (DetectInfiniteLoops) {
-            state.memoryState.registerWrite(address, *mo, *wos, bytes);
+            bound->memoryState.registerWrite(*bound, address, *mo, *wos, bytes);
           }
         }
       } else {

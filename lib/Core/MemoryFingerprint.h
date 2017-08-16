@@ -94,8 +94,12 @@ public:
   }
 
   void applyToFingerprintAllocaDelta() {
+    applyToFingerprintAllocaDelta(fingerprintAllocaDelta);
+  }
+
+  void applyToFingerprintAllocaDelta(fingerprint_t &deltaDst) {
     getDerived().generateHash();
-    executeXOR(fingerprintAllocaDelta, buffer);
+    executeXOR(deltaDst, buffer);
     // All changes that are applied to alloca deltas are also applied to
     // fingerprint immediately, since we need to be able to remove just the
     // allocas of a single stack frame in a simple manner.
@@ -132,7 +136,7 @@ public:
   // created and modified using the current instance of MemoryFingerprint, as
   // it assumes that every change recorded in allocaDelta has also been applied
   // to fingerprint.
-  void setAllocaDelta(fingerprint_t allocaDelta) {
+  void setAllocaDeltaToPreviousValue(fingerprint_t allocaDelta) {
     // TODO: write separate dummy method that actually checks this assumption?
     fingerprintAllocaDelta = allocaDelta;
   }

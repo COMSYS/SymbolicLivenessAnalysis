@@ -41,13 +41,22 @@ void MemoryState::registerExternalFunctionCall() {
   fingerprint.discardEverything();
 }
 
-void MemoryState::registerAllocation(const MemoryObject &mo) {
+void MemoryState::registerAllocation(const ExecutionState &state,
+                                     const MemoryObject &mo) {
   fingerprint.updateUint8(1);
   fingerprint.updateUint64(mo.address);
   fingerprint.updateUint64(mo.size);
 
   if (mo.isLocal) {
-    fingerprint.applyToFingerprintAllocaDelta();
+    if (!trace.isAllocaAllocationInCurrentStackFrame(state, mo)) {
+      MemoryFingerprint::fingerprint_t *externalDelta;
+      externalDelta = trace.findAllocaAllocationStackFrame(state, mo);
+      if (externalDelta == nullptr) {
+        fingerprint.applyToFingerprint();
+      } else {
+        fingerprint.applyToFingerprintAllocaDelta(*externalDelta);
+      }
+    }
   } else {
     fingerprint.applyToFingerprint();
   }
@@ -62,8 +71,9 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
   }
 }
 
-void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
-                                const ObjectState &os, std::size_t bytes) {
+void MemoryState::registerWrite(const ExecutionState &state, ref<Expr> address,
+                                const MemoryObject &mo, const ObjectState &os,
+                                std::size_t bytes) {
   if (libraryFunction.entered || outputFunction.entered) {
     return;
   }
@@ -77,14 +87,27 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                  << ExprString(base) << "\n";
   }
 
-  if (!globalAllocationsInCurrentStackFrame && !mo.isLocal)
-    globalAllocationsInCurrentStackFrame = true;
-
   ref<Expr> offset = mo.getOffsetExpr(address);
   ConstantExpr *concreteOffset = dyn_cast<ConstantExpr>(offset);
 
   std::uint64_t begin = 0;
   std::uint64_t end = os.size;
+
+  bool isLocal = false;
+  MemoryFingerprint::fingerprint_t *externalDelta = nullptr;
+
+  if (mo.isLocal) {
+    isLocal = true;
+    if (!trace.isAllocaAllocationInCurrentStackFrame(state, mo)) {
+      externalDelta = trace.findAllocaAllocationStackFrame(state, mo);
+      if (externalDelta == nullptr) {
+        isLocal = false;
+      }
+    }
+  }
+
+  if (!globalAllocationsInCurrentStackFrame && !isLocal)
+    globalAllocationsInCurrentStackFrame = true;
 
   // optimization for concrete offsets: only hash changed indices
   if (concreteOffset) {
@@ -127,8 +150,12 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       }
     }
 
-    if (mo.isLocal) {
-      fingerprint.applyToFingerprintAllocaDelta();
+    if (isLocal) {
+      if (externalDelta == nullptr) {
+        fingerprint.applyToFingerprintAllocaDelta();
+      } else {
+        fingerprint.applyToFingerprintAllocaDelta(*externalDelta);
+      }
     } else {
       fingerprint.applyToFingerprint();
     }
@@ -522,9 +549,10 @@ bool MemoryState::isInOutputFunction(llvm::Function *f) {
   return (outputFunction.entered && f == outputFunction.function);
 }
 
-bool MemoryState::enterLibraryFunction(llvm::Function *f,
-  ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
-  std::size_t bytes) {
+bool MemoryState::enterLibraryFunction(const ExecutionState &state,
+  llvm::Function *f, ref<ConstantExpr> address, const MemoryObject *mo,
+  const ObjectState *os, std::size_t bytes)
+{
   if (libraryFunction.entered) {
     // we can only enter one library function at a time
     klee_warning_once(f, "already entered a library function");
@@ -536,7 +564,7 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
                  << f->getName() << "\n";
   }
 
-  unregisterWrite(address, *mo, *os, bytes);
+  unregisterWrite(state, address, *mo, *os, bytes);
 
   libraryFunction.entered = true;
   libraryFunction.function = f;
@@ -555,7 +583,9 @@ const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
   return libraryFunction.mo;
 }
 
-void MemoryState::leaveLibraryFunction(const ObjectState *os) {
+void MemoryState::leaveLibraryFunction(const ExecutionState &state,
+  const ObjectState *os)
+{
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: leaving library function: "
                  << libraryFunction.function->getName() << "\n";
@@ -564,16 +594,17 @@ void MemoryState::leaveLibraryFunction(const ObjectState *os) {
   libraryFunction.entered = false;
   libraryFunction.function = nullptr;
 
-  registerWrite(libraryFunction.address, *libraryFunction.mo, *os,
+  registerWrite(state, libraryFunction.address, *libraryFunction.mo, *os,
     libraryFunction.bytes);
 }
 
-void MemoryState::registerPushFrame() {
+void MemoryState::registerPushFrame(const KFunction *kf) {
   if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
     llvm::errs() << "MemoryState: PUSHFRAME\n";
   }
 
-  trace.registerEndOfStackFrame(fingerprint.getLocalDelta(),
+  trace.registerEndOfStackFrame(kf,
+                                fingerprint.getLocalDelta(),
                                 fingerprint.getAllocaDelta(),
                                 globalAllocationsInCurrentStackFrame);
 
@@ -610,29 +641,29 @@ void MemoryState::registerPopFrame(const ExecutionState *state,
     // to the function we are currently leaving.
     removeConsumedLocals(state, returningBB, false);
 
-    MemoryTrace::StackFrameEntry previousFrame = trace.popFrame();
+    MemoryTrace::StackFrameEntry sfe = trace.popFrame();
 
     // remove locals and arguments of stack frame that is to be left
     fingerprint.discardLocalDelta();
     // set local delta to fingerprint local delta of stack frame that is to be
     // entered to make locals and arguments "visible" again
-    fingerprint.setLocalDelta(previousFrame.fingerprintLocalDelta);
+    fingerprint.setLocalDelta(sfe.fingerprintLocalDelta);
 
     // remove allocas allocated in stack frame that is to be left
     fingerprint.discardAllocaDelta();
     // initialize alloca delta with previous fingerprint alloca delta which
     // contains information on allocas allocated in the stack frame that is to
     // be entered
-    fingerprint.setAllocaDelta(previousFrame.fingerprintAllocaDelta);
+    fingerprint.setAllocaDeltaToPreviousValue(sfe.fingerprintAllocaDelta);
 
     populateLiveRegisters(callerBB);
 
-    globalAllocationsInCurrentStackFrame = previousFrame.globalAllocation;
+    globalAllocationsInCurrentStackFrame = sfe.globalAllocation;
 
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "reapplying local delta: "
                    << fingerprint.getLocalDeltaAsString()
-                   << "reapplying alloca delta: "
+                   << "\nreapplying alloca delta: "
                    << fingerprint.getAllocaDeltaAsString()
                    << "\nGlobal Alloc: " << globalAllocationsInCurrentStackFrame
                    << "\nFingerprint: " << fingerprint.getFingerprintAsString()

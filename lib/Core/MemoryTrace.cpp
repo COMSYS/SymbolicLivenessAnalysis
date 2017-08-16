@@ -2,9 +2,12 @@
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
+#include "klee/ExecutionState.h"
 #include "klee/Internal/Module/InstructionInfoTable.h"
 #include "klee/Internal/Support/ErrorHandling.h"
 
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Function.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <iomanip>
@@ -13,7 +16,7 @@
 
 /*
 
-   Example: Internal Data Structures of MemoryTrace
+   Example: Internal Data Structures of MemoryTrace (KFunction* omitted)
 
    1. registerBasicBlock(inst 1, fingerprint 1);
    2. registerBasicBlock(inst 2, fingerprint 2);
@@ -55,10 +58,12 @@ void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
   trace.emplace_back(instruction, fingerprint);
 }
 
-void MemoryTrace::registerEndOfStackFrame(fingerprint_t fingerprintLocalDelta,
+void MemoryTrace::registerEndOfStackFrame(const KFunction* kf,
+                                          fingerprint_t fingerprintLocalDelta,
                                           fingerprint_t fingerprintAllocaDelta,
                                           bool globalAllocation) {
   stackFrames.emplace_back(trace.size(),
+                           kf,
                            fingerprintLocalDelta,
                            fingerprintAllocaDelta,
                            globalAllocation);
@@ -184,6 +189,57 @@ bool MemoryTrace::findLoop() {
   }
 
   return false;
+}
+
+
+bool MemoryTrace::isAllocaAllocationInStackFrame(const StackFrame &sf,
+  const MemoryObject &mo)
+{
+  const std::vector<const MemoryObject *> &allocas = sf.allocas;
+  return std::find(allocas.begin(), allocas.end(), &mo) != allocas.end();
+}
+
+bool MemoryTrace::isAllocaAllocationInCurrentStackFrame(
+  const ExecutionState &state, const MemoryObject &mo)
+{
+  const StackFrame &sf = state.stack.back();
+  return isAllocaAllocationInStackFrame(sf, mo);
+}
+
+MemoryTrace::fingerprint_t *MemoryTrace::findAllocaAllocationStackFrame(
+  const ExecutionState &state, const MemoryObject &mo) {
+  assert(!isAllocaAllocationInCurrentStackFrame(state, mo));
+
+  const llvm::Value *allocSite = mo.allocSite;
+  const llvm::Instruction *allocInst = dyn_cast<llvm::Instruction>(allocSite);
+  if (allocInst) {
+    const llvm::Function *allocF = allocInst->getParent()->getParent();
+
+    for (auto it = stackFrames.rbegin(); it != stackFrames.rend(); ++it) {
+      StackFrameEntry &sfe = *it;
+      if (sfe.kf->function == allocF) {
+        // Compared to stackFrames, state.stack contains at least one more stack
+        // frame, i.e. the currently executed one (top most entry)
+        // Also, stackFrames only contains entries up to the last stack frame
+        // that contained an external function call
+        assert(stackFrames.size() + 1 <= state.stack.size());
+        size_t reversePos = std::distance(stackFrames.rbegin(), it) + 1;
+
+        size_t highestIndex = state.stack.size() - 1;
+        const StackFrame &sf = state.stack.at(highestIndex - reversePos);
+
+        if (isAllocaAllocationInStackFrame(sf, mo)) {
+          if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+            llvm::errs() << "MemoryTrace: Alloca %" << allocSite->getName()
+                         << " was allocated in " << allocF->getName() << "()"
+                         << " (" << reversePos << " stack frames down)\n";
+          }
+          return &sfe.fingerprintAllocaDelta;
+        }
+      }
+    }
+  }
+  return nullptr;
 }
 
 void MemoryTrace::dumpTrace(llvm::raw_ostream &out) const {

@@ -89,23 +89,29 @@ public:
 
   void clearEverything();
 
-  void registerAllocation(const MemoryObject &mo);
-  void registerDeallocation(const MemoryObject &mo) {
+  void registerAllocation(const ExecutionState &state, const MemoryObject &mo);
+  void registerDeallocation(const ExecutionState &state, const MemoryObject &mo)
+  {
+    if (libraryFunction.entered || outputFunction.entered) {
+      return;
+    }
     if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
       llvm::errs() << "MemoryState: DEALLOCATION\n";
     }
 
-    registerAllocation(mo);
+    registerAllocation(state, mo);
   }
 
-  void registerWrite(ref<Expr> address, const MemoryObject &mo,
-                     const ObjectState &os, std::size_t bytes);
-  void registerWrite(ref<Expr> address, const MemoryObject &mo,
-                     const ObjectState &os) {
-    registerWrite(address, mo, os, os.size);
+  void registerWrite(const ExecutionState &state, ref<Expr> address,
+                     const MemoryObject &mo, const ObjectState &os,
+                     std::size_t bytes);
+  void registerWrite(const ExecutionState &state, ref<Expr> address,
+                     const MemoryObject &mo, const ObjectState &os) {
+    registerWrite(state, address, mo, os, os.size);
   }
-  void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
-                       const ObjectState &os, std::size_t bytes) {
+  void unregisterWrite(const ExecutionState &state, ref<Expr> address,
+                       const MemoryObject &mo, const ObjectState &os,
+                       std::size_t bytes) {
     if (libraryFunction.entered || outputFunction.entered) {
       return;
     }
@@ -113,10 +119,11 @@ public:
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
 
-    registerWrite(address, mo, os, bytes);
+    registerWrite(state, address, mo, os, bytes);
   }
-  void unregisterWrite(const MemoryObject &mo, const ObjectState &os) {
-    unregisterWrite(mo.getBaseExpr(), mo, os, os.size);
+  void unregisterWrite(const ExecutionState &state, const MemoryObject &mo,
+                       const ObjectState &os) {
+    unregisterWrite(state, mo.getBaseExpr(), mo, os, os.size);
   }
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
@@ -146,13 +153,14 @@ public:
   void leaveOutputFunction();
   bool isInOutputFunction(llvm::Function *f);
 
-  bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
-    const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
+  bool enterLibraryFunction(const ExecutionState &state, llvm::Function *f,
+    ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
+    std::size_t bytes);
   bool isInLibraryFunction(llvm::Function *f);
   const MemoryObject *getLibraryFunctionMemoryObject();
-  void leaveLibraryFunction(const ObjectState *os);
+  void leaveLibraryFunction(const ExecutionState &state, const ObjectState *os);
 
-  void registerPushFrame();
+  void registerPushFrame(const KFunction *kf);
   void registerPopFrame(const ExecutionState *state,
                         const llvm::BasicBlock *returningBB,
                         const llvm::BasicBlock *callerBB);
