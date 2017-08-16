@@ -5,19 +5,19 @@
 
 // ---  cannot be detected with -O0 (alloca)
 // RUN: rm -rf %t-O0.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 %t-O0.bc 2>&1 | not FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O0.klee-out -detect-infinite-loops -allocate-determ -stop-after-n-instructions=10000 %t-O0.bc 2>&1 | not FileCheck %s
 // RUN: not test -f %t-O0.klee-out/test000001.infty.err
 
 // RUN: rm -rf %t-O1.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 %t-O1.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O1.klee-out -detect-infinite-loops -allocate-determ -stop-after-n-instructions=10000 %t-O1.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O1.klee-out/test000001.infty.err
 
 // RUN: rm -rf %t-O2.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O2.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 %t-O2.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O2.klee-out -detect-infinite-loops -allocate-determ -stop-after-n-instructions=10000 %t-O2.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O2.klee-out/test000001.infty.err
 
 // RUN: rm -rf %t-O3.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O3.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 %t-O3.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O3.klee-out -detect-infinite-loops -allocate-determ -stop-after-n-instructions=10000 %t-O3.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O3.klee-out/test000001.infty.err
 
 #include <stdio.h>
@@ -43,6 +43,6 @@ void yoYo(int x, int y) {
  */
 
 int main(int argc, char *argv[]) {
-  // CHECK: infinite loop
+  // CHECK: KLEE: ERROR: {{[^:]*}}/recursion-yoyo.c:{{[0-9]+}}: infinite loop{{$}}
   yoYo(5, 0);
 }
