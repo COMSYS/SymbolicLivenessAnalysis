@@ -1334,9 +1334,6 @@ void Executor::executeCall(ExecutionState &state,
     }
 
     if (InvokeInst *ii = dyn_cast<InvokeInst>(i)) {
-      if (DetectInfiniteLoops) {
-        state.memoryState.registerPushFrame();
-      }
       transferToBasicBlock(ii->getNormalDest(), i->getParent(), state);
     }
   } else {
