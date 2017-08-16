@@ -3236,10 +3236,12 @@ void Executor::executeAlloc(ExecutionState &state,
       bindLocal(target, state, 
                 ConstantExpr::alloc(0, Context::get().getPointerWidth()));
     } else {
+      ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (DetectInfiniteLoops) {
+        // execute bindObjectInState first to make sure that local allocations
+        // are included in the allocas list of the current stack frame
         state.memoryState.registerAllocation(state, *mo);
       }
-      ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
         os->initializeToZero();
       } else {
