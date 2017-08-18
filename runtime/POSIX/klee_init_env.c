@@ -208,6 +208,8 @@ usage: (klee_init_env) [options] [program arguments]\n\
   klee_init_fds(sym_files, sym_file_len, sym_stdin_len, sym_stdout_flag,
                 save_all_writes_flag, fd_fail);
 
+  #ifndef KLEE_REPLAY_INIT_ENV
   klee_clear_memory_state();
+  #endif
 }
 
