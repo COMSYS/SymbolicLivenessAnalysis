@@ -7,7 +7,7 @@ llvm::cl::opt<bool> DetectInfiniteLoops(
   llvm::cl::desc("Enable detection of infinite loops (default=false)"),
   llvm::cl::init(false));
 
-llvm::cl::list<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection(
+llvm::cl::bits<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection(
   "debug-infinite-loop-detection",
   llvm::cl::desc("Log information about Infinite Loop Detection."),
   llvm::cl::values(

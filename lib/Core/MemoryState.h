@@ -67,7 +67,7 @@ private:
     if (!value.isNull()) {
       registerLocal(inst, value);
 
-      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "MemoryState: unregister local %" << inst->getName()
                      << ": " << ExprString(value) << " "
                      << "[fingerprint: " << fingerprint.getFingerprintAsString()
@@ -92,7 +92,7 @@ public:
     if (libraryFunction.entered || outputFunction.entered) {
       return;
     }
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: DEALLOCATION\n";
     }
 
@@ -110,7 +110,7 @@ public:
     if (libraryFunction.entered || outputFunction.entered) {
       return;
     }
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: UNREGISTER\n";
     }
 
@@ -123,8 +123,8 @@ public:
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
     if (!libraryFunction.entered && !outputFunction.entered
-      && optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
-      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      && DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "MemoryState: UNREGISTER LOCAL (KInst)\n";
       }
     }

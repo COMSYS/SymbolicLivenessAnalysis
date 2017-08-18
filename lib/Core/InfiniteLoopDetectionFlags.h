@@ -12,7 +12,7 @@ enum DebugInfiniteLoopDetectionType {
   STDERR_TRACE
 };
 
-extern llvm::cl::list<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection;
+extern llvm::cl::bits<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection;
 
 }
 #endif

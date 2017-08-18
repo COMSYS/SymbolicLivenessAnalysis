@@ -31,7 +31,7 @@ void MemoryState::registerExternalFunctionCall() {
     return;
   }
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: external function call\n";
   }
 
@@ -64,7 +64,7 @@ void MemoryState::registerAllocation(const MemoryObject &mo) {
     fingerprint.applyToFingerprint();
   }
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: processing "
                  << (mo.isLocal ? "local " : "global ")
                  << "(de)allocation at address "
@@ -82,7 +82,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 
   ref<ConstantExpr> base = mo.getBaseExpr();
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: processing "
                  << (mo.isLocal ? "local " : "global ")
                  << "ObjectState at base address "
@@ -128,7 +128,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     // add current offset to fingerprint
     fingerprint.updateUint64(i);
 
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "[+" << i << "] ";
     }
 
@@ -139,7 +139,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       fingerprint.updateUint8(0);
       std::uint8_t value = constant->getZExtValue(8);
       fingerprint.updateUint8(value);
-      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "0x";
         llvm::errs().write_hex((int)value);
       }
@@ -147,7 +147,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       // symbolic value
       fingerprint.updateUint8(1);
       fingerprint.updateExpr(valExpr);
-      if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << ExprString(valExpr);
       }
     }
@@ -162,7 +162,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       fingerprint.applyToFingerprint();
     }
 
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       if (i % 10 == 9) {
         llvm::errs() << "\n";
       } else {
@@ -170,7 +170,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       }
     }
   }
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << " [fingerprint: "
                  << fingerprint.getFingerprintAsString() << "]\n";
   }
@@ -199,7 +199,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
   registerLocal(inst, value);
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: register local %" << target->inst->getName()
                  << ": " << ExprString(value)
                  << " [fingerprint: " << fingerprint.getFingerprintAsString()
@@ -217,7 +217,7 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
     return;
   }
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "registerLocal(%" << inst->getName() << ", value)\n";
   }
 
@@ -255,7 +255,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
 
   fingerprint.applyToFingerprintLocalDelta();
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: adding argument " << index << " to function "
                  << reinterpret_cast<std::intptr_t>(kf) << ": "
                  << ExprString(value) << "\n"
@@ -282,7 +282,7 @@ void MemoryState::populateLiveRegisters(const llvm::BasicBlock *bb) {
 }
 
 void MemoryState::registerBasicBlock(const KInstruction *inst) {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: BASICBLOCK [fingerprint: "
                  << fingerprint.getFingerprintAsString() << "]\n";
   }
@@ -306,7 +306,7 @@ void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
         llvm::Value *consumed = consumedRegisters->getOperand(i);
         consumedRegs.push_back(consumed);
         llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
-        if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+        if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
           llvm::errs() << "MemoryState: consumed by previous basic block: "
                        << inst->getName() << "\n";
         }
@@ -359,7 +359,7 @@ void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
 
 void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
                                      const llvm::BasicBlock *src) {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "registerBasicBlock " << dst->getName()
                  << " (coming from " << src->getName() << ")\n";
   }
@@ -368,7 +368,7 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
 
   populateLiveRegisters(dst);
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "live variables at the end of " << dst->getName() << ": {";
     for (std::size_t i = 0; i < basicBlockInfo.liveRegisters.size(); ++i) {
       llvm::Value *liveRegister = basicBlockInfo.liveRegisters.at(i);
@@ -420,7 +420,7 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
         for (std::size_t j = 0; j < killsNode->getNumOperands(); ++j) {
           llvm::Value *kill = killsNode->getOperand(j);
           llvm::Instruction *inst = static_cast<llvm::Instruction *>(kill);
-          if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+          if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
             llvm::errs() << "MemoryState: not live anymore: "
                          << inst->getName() << "\n";
           }
@@ -495,7 +495,7 @@ bool MemoryState::findLoop() {
 
   bool result = trace.findLoop();
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
     if (result) {
       trace.dumpTrace();
     }
@@ -512,7 +512,7 @@ bool MemoryState::enterOutputFunction(llvm::Function *f) {
     return false;
   }
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: entering output function: "
                  << f->getName() << "\n";
   }
@@ -524,7 +524,7 @@ bool MemoryState::enterOutputFunction(llvm::Function *f) {
 }
 
 void MemoryState::leaveOutputFunction() {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: leaving output function: "
                  << outputFunction.function->getName() << "\n";
   }
@@ -546,7 +546,7 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
     return false;
   }
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: entering library function: "
                  << f->getName() << "\n";
   }
@@ -571,7 +571,7 @@ const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
 }
 
 void MemoryState::leaveLibraryFunction(const ObjectState *os) {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: leaving library function: "
                  << libraryFunction.function->getName() << "\n";
   }
@@ -584,7 +584,7 @@ void MemoryState::leaveLibraryFunction(const ObjectState *os) {
 }
 
 void MemoryState::registerPushFrame(const KFunction *kf) {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: PUSHFRAME\n";
   }
 
@@ -602,7 +602,7 @@ void MemoryState::registerPushFrame(const KFunction *kf) {
   // reset stack frame specific information
   globalAllocationsInCurrentStackFrame = false;
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "Fingerprint: " << fingerprint.getFingerprintAsString()
                  << "\n";
   }
@@ -612,7 +612,7 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
                                    const llvm::BasicBlock *callerBB) {
   // IMPORTANT: has to be called prior to state.popFrame()
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: POPFRAME\n"
                  << "Fingerprint: " << fingerprint.getFingerprintAsString()
                  << "\n";
@@ -644,7 +644,7 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
 
     globalAllocationsInCurrentStackFrame = sfe.globalAllocation;
 
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "reapplying local delta: "
                    << fingerprint.getLocalDeltaAsString()
                    << "\nreapplying alloca delta: "
@@ -656,7 +656,7 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
   } else {
     // no stackframe left to pop
 
-    if (optionIsSet(DebugInfiniteLoopDetection, STDERR_STATE)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "no stackframe left in trace\n";
     }
   }

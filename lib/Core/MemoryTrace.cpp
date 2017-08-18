@@ -70,14 +70,14 @@ void MemoryTrace::registerEndOfStackFrame(const KFunction* kf,
 }
 
 void MemoryTrace::clear() {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
     dumpTrace();
   }
 
   trace.clear();
   stackFrames.clear();
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
     dumpTrace();
   }
 }
@@ -87,7 +87,7 @@ std::size_t MemoryTrace::getNumberOfStackFrames() {
 }
 
 MemoryTrace::StackFrameEntry MemoryTrace::popFrame() {
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
     dumpTrace();
   }
 
@@ -105,7 +105,7 @@ MemoryTrace::StackFrameEntry MemoryTrace::popFrame() {
   // remove topmost stack frame
   stackFrames.pop_back();
 
-  if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
     llvm::errs() << "Popping StackFrame\n";
     dumpTrace();
   }
@@ -229,7 +229,7 @@ MemoryTrace::fingerprint_t *MemoryTrace::findAllocaAllocationStackFrame(
         const StackFrame &sf = state.stack.at(highestIndex - reversePos);
 
         if (isAllocaAllocationInStackFrame(sf, mo)) {
-          if (optionIsSet(DebugInfiniteLoopDetection, STDERR_TRACE)) {
+          if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
             llvm::errs() << "MemoryTrace: Alloca %" << allocSite->getName()
                          << " was allocated in " << allocF->getName() << "()"
                          << " (" << reversePos << " stack frames down)\n";
