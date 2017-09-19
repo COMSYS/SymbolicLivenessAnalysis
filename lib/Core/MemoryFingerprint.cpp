@@ -169,10 +169,9 @@ void MemoryFingerprint_Dummy::clearHash() {
 std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t fingerprint) {
   std::string result_str;
   llvm::raw_string_ostream result(result_str);
-  size_t allocations = 0;
   size_t writes = 0;
 
-  // show individual memory operations in detail: writes (per byte), allocations
+  // show individual memory operations in detail: writes (per byte)
   bool showMemoryOperations = false;
 
   result << "{";
@@ -183,23 +182,6 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
     item >> id;
     bool output = false;
     switch (id) {
-      case 1:
-        if (showMemoryOperations) {
-          std::uint64_t addr;
-          std::uint64_t size;
-
-          item >> addr >> size;
-
-          result << "Alloc: ";
-          result << addr;
-          result << " (size: ";
-          result << size;
-          result << ")";
-
-          output = true;
-        }
-        allocations++;
-        break;
       case 2:
         if (showMemoryOperations) {
           std::uint64_t baseaddr;
@@ -284,8 +266,7 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
   }
 
   if (!showMemoryOperations) {
-    result << "} + " << allocations << " allocation(s) + " << writes
-           << " write(s)";
+    result << "} + " << writes << " write(s)";
   } else {
     result << "}";
   }

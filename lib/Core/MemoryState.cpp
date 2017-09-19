@@ -41,39 +41,6 @@ void MemoryState::registerExternalFunctionCall() {
   fingerprint.discardEverything();
 }
 
-void MemoryState::registerAllocation(const MemoryObject &mo) {
-  if (libraryFunction.entered || outputFunction.entered) {
-    return;
-  }
-
-  fingerprint.updateUint8(1);
-  fingerprint.updateUint64(mo.address);
-  fingerprint.updateUint64(mo.size);
-
-  if (mo.isLocal) {
-    if (!trace.isAllocaAllocationInCurrentStackFrame(executionState, mo)) {
-      MemoryFingerprint::fingerprint_t *externalDelta;
-      externalDelta = trace.findAllocaAllocationStackFrame(executionState, mo);
-      if (externalDelta == nullptr) {
-        fingerprint.applyToFingerprint();
-      } else {
-        fingerprint.applyToFingerprintAllocaDelta(*externalDelta);
-      }
-    }
-  } else {
-    fingerprint.applyToFingerprint();
-  }
-
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: processing "
-                 << (mo.isLocal ? "local " : "global ")
-                 << "(de)allocation at address "
-                 << mo.address << " of size " << mo.size
-                 << " [fingerprint: " << fingerprint.getFingerprintAsString()
-                 << "]\n";
-  }
-}
-
 void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                                 const ObjectState &os, std::size_t bytes) {
   if (libraryFunction.entered || outputFunction.entered) {

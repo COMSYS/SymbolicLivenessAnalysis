@@ -3236,11 +3236,6 @@ void Executor::executeAlloc(ExecutionState &state,
                 ConstantExpr::alloc(0, Context::get().getPointerWidth()));
     } else {
       ObjectState *os = bindObjectInState(state, mo, isLocal);
-      if (DetectInfiniteLoops) {
-        // execute bindObjectInState first to make sure that local allocations
-        // are included in the allocas list of the current stack frame
-        state.memoryState.registerAllocation(*mo);
-      }
       if (zeroMemory) {
         os->initializeToZero();
       } else {
@@ -3257,9 +3252,6 @@ void Executor::executeAlloc(ExecutionState &state,
         for (unsigned i=0; i<count; i++)
           os->write(i, reallocFrom->read8(i));
         const MemoryObject *reallocatedObject = reallocFrom->getObject();
-        if (DetectInfiniteLoops) {
-          state.memoryState.registerDeallocation(*reallocatedObject);
-        }
         state.addressSpace.unbindObject(reallocatedObject);
       }
     }
@@ -3366,7 +3358,6 @@ void Executor::executeFree(ExecutionState &state,
                               getAddressInfo(*it->second, address));
       } else {
         it->second->memoryState.unregisterWrite(*mo, *os);
-        it->second->memoryState.registerDeallocation(*mo);
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, Expr::createPointer(0));

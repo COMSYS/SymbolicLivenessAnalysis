@@ -87,18 +87,6 @@ public:
 
   void clearEverything();
 
-  void registerAllocation(const MemoryObject &mo);
-  void registerDeallocation(const MemoryObject &mo) {
-    if (libraryFunction.entered || outputFunction.entered) {
-      return;
-    }
-    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-      llvm::errs() << "MemoryState: DEALLOCATION\n";
-    }
-
-    registerAllocation(mo);
-  }
-
   void registerWrite(ref<Expr> address, const MemoryObject &mo,
                      const ObjectState &os, std::size_t bytes);
   void registerWrite(ref<Expr> address, const MemoryObject &mo,
