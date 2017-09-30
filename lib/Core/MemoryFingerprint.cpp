@@ -182,20 +182,18 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
     item >> id;
     bool output = false;
     switch (id) {
+      case 1:
       case 2:
         if (showMemoryOperations) {
-          std::uint64_t baseaddr;
-          std::uint64_t offset;
-          std::uint8_t isSymbolic;
+          std::uint64_t addr;
 
-          item >> baseaddr >> offset >> isSymbolic;
+          item >> addr;
 
           result << "Write: ";
-          result << baseaddr;
-          result << " + " << offset;
+          result << addr;
           result << " = ";
 
-          if (isSymbolic) {
+          if (id == 2) {
             std::string value;
             item >> value;
             result << value;
@@ -208,7 +206,8 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
         }
         writes++;
         break;
-      case 3: {
+      case 3:
+      case 4: {
         std::intptr_t ptr;
         std::string value;
 
@@ -230,7 +229,8 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
         output = true;
         break;
       }
-      case 4: {
+      case 5:
+      case 6: {
         result << "Argument: ";
         std::intptr_t ptr;
         std::size_t argumentIndex;

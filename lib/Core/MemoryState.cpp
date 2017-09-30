@@ -87,13 +87,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
   }
 
   for (std::uint64_t i = begin; i < end; i++) {
-    // add base address to fingerprint
-    fingerprint.updateUint8(2);
     std::uint64_t baseAddress = base->getZExtValue(64);
-    fingerprint.updateUint64(baseAddress);
-
-    // add current offset to fingerprint
-    fingerprint.updateUint64(i);
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "[+" << i << "] ";
@@ -103,7 +97,11 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     ref<Expr> valExpr = os.read8(i);
     if (ConstantExpr *constant = dyn_cast<ConstantExpr>(valExpr)) {
       // concrete value
-      fingerprint.updateUint8(0);
+      fingerprint.updateUint8(1);
+
+      // add base address + offset to fingerprint
+      fingerprint.updateUint64(baseAddress + i);
+
       std::uint8_t value = constant->getZExtValue(8);
       fingerprint.updateUint8(value);
       if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
@@ -112,7 +110,11 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
       }
     } else {
       // symbolic value
-      fingerprint.updateUint8(1);
+      fingerprint.updateUint8(2);
+
+      // add base address + offset to fingerprint
+      fingerprint.updateUint64(baseAddress + i);
+
       fingerprint.updateExpr(valExpr);
       if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << ExprString(valExpr);
@@ -188,14 +190,15 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
     llvm::errs() << "registerLocal(%" << inst->getName() << ", value)\n";
   }
 
-  fingerprint.updateUint8(3);
-  fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
-
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
     // concrete value
+    fingerprint.updateUint8(3);
+    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
     fingerprint.updateConstantExpr(*constant);
   } else {
     // symbolic value
+    fingerprint.updateUint8(4);
+    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
     fingerprint.updateExpr(value);
   }
 
@@ -208,15 +211,17 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
     return;
   }
 
-  fingerprint.updateUint8(4);
-  fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
-  fingerprint.updateUint64(index);
-
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
     // concrete value
+    fingerprint.updateUint8(5);
+    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
+    fingerprint.updateUint64(index);
     fingerprint.updateConstantExpr(*constant);
   } else {
     // symbolic value
+    fingerprint.updateUint8(6);
+    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
+    fingerprint.updateUint64(index);
     fingerprint.updateExpr(value);
   }
 
