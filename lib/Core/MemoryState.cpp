@@ -70,6 +70,8 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     if (!trace.isAllocaAllocationInCurrentStackFrame(executionState, mo)) {
       externalDelta = trace.findAllocaAllocationStackFrame(executionState, mo);
       if (externalDelta == nullptr) {
+        // allocation was made in previous stack frame that is not available
+        // anymore due to an external function call
         isLocal = false;
       }
     }
@@ -123,8 +125,10 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 
     if (isLocal) {
       if (externalDelta == nullptr) {
+        // current stack frame
         fingerprint.applyToFingerprintAllocaDelta();
       } else {
+        // previous stack frame that is still available
         fingerprint.applyToFingerprintAllocaDelta(*externalDelta);
       }
     } else {

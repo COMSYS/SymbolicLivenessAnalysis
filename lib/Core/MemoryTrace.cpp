@@ -114,7 +114,7 @@ MemoryTrace::StackFrameEntry MemoryTrace::popFrame() {
 }
 
 bool MemoryTrace::findLoop() {
-  if(stackFrames.size() > 0) {
+  if (stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
     assert(stackFrames.back().index < trace.size() &&
       "current stack frame is empty");
@@ -122,7 +122,7 @@ bool MemoryTrace::findLoop() {
 
   auto stackFramesIt = stackFrames.rbegin();
   std::size_t topStackFrameBoundary = 0;
-  if(stackFramesIt != stackFrames.rend()) {
+  if (stackFramesIt != stackFrames.rend()) {
     // first index that belongs to current stack frame
     topStackFrameBoundary = stackFramesIt->index;
   }
@@ -153,13 +153,13 @@ bool MemoryTrace::findLoop() {
   // entry within a stack frame.
   // This entry is called stack frame base and only contains changes to global
   // memory objects and the binding of arguments supplied to a function.
-  if(stackFrames.size() > 0) {
+  if (stackFrames.size() > 0) {
     MemoryTraceEntry &topStackFrameBase = trace.at(topStackFrameBoundary);
 
     for (auto it = stackFrames.rbegin() + 1; it != stackFrames.rend(); ++it) {
       // iterate over all stack frames (but the first)
 
-      if(it->globalAllocation) {
+      if (it->globalAllocation) {
         // Allocation addresses can differ between allocations which leads to
         // different fingerprints for two otherwise equal iterations of an
         // infinite loop containing an allocation.
