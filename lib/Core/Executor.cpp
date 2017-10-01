@@ -336,7 +336,8 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
       coreSolverTimeout(MaxCoreSolverTime != 0 && MaxInstructionTime != 0
                             ? std::min(MaxCoreSolverTime, MaxInstructionTime)
                             : std::max(MaxCoreSolverTime, MaxInstructionTime)),
-      debugInstFile(0), debugLogBuffer(debugBufferString) {
+      debugInstFile(0), debugLogBuffer(debugBufferString),
+      executorStartTime(std::chrono::steady_clock::now()) {
 
   if (coreSolverTimeout) UseForkedCoreSolver = true;
   Solver *coreSolver = klee::createCoreSolver(CoreSolverToUse);
@@ -3003,6 +3004,8 @@ void Executor::terminateStateOnError(ExecutionState &state,
                                      enum TerminateReason termReason,
                                      const char *suffix,
                                      const llvm::Twine &info) {
+  auto timeToError = std::chrono::steady_clock::now() - executorStartTime;
+
   std::string message = messaget.str();
   static std::set< std::pair<Instruction*, std::string> > emittedErrors;
   Instruction * lastInst;
@@ -3026,6 +3029,9 @@ void Executor::terminateStateOnError(ExecutionState &state,
       msg << "Line: " << ii.line << "\n";
       msg << "assembly.ll line: " << ii.assemblyLine << "\n";
     }
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeToError);
+    auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(timeToError) - seconds;
+    msg << "Time to error: " << seconds.count() << "." << milliseconds.count() << " seconds\n";
     msg << "Stack: \n";
     state.dumpStack(msg);
 

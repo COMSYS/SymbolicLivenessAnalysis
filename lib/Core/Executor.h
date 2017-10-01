@@ -25,6 +25,7 @@
 
 #include "llvm/ADT/Twine.h"
 
+#include <chrono>
 #include <vector>
 #include <string>
 #include <map>
@@ -215,6 +216,9 @@ private:
 
   // @brief buffer to store logs before flushing to file
   llvm::raw_string_ostream debugLogBuffer;
+
+  // measure time to error since start of Executor
+  std::chrono::steady_clock::time_point executorStartTime;
 
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
