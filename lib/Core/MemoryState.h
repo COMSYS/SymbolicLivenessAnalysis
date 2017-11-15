@@ -61,6 +61,8 @@ private:
 
   void unregisterConsumedLocals(const llvm::BasicBlock *bb,
                                 bool writeToLocalDelta = true);
+  void unregisterKilledLocals(const llvm::BasicBlock *dst,
+                              const llvm::BasicBlock *src);
 
   void registerLocal(const llvm::Instruction *inst, ref<Expr> value);
   void unregisterLocal(const llvm::Instruction *inst) {

@@ -152,7 +152,7 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     // incoming basic block, i.e. registers that are only used by specific basic
     // blocks but not the annotated one
     // WARNING: we specifically exclude registers that are consumed during the
-    //          annotated basic block from this set
+    //          execution of the annotated basic block from this set
     // Example:
     // (
     //   (precedingBasicBlock1, (killedRegister1, killedRegister2)),
@@ -181,8 +181,8 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
             //  basic block and the PHI instructions: i.e. PHI instructions must
             //  be first in a basic block."
             // Thus, we can abort as soon as we encounter a non-PHI instruction
-            // (This is only valid here because in this loop, we skip the nop
-            // instruction we insert as first instruction into each basic block)
+            // (This is only valid here, because in this for-loop, we skip the
+            // nop instruction inserted at the begining of each basic block)
             break;
           }
         }

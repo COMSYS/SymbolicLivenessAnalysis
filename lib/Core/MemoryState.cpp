@@ -243,7 +243,9 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
 
 void MemoryState::updateBasicBlockInfo(const llvm::BasicBlock *bb) {
   if (basicBlockInfo.bb != bb) {
-    basicBlockInfo.prevbb = basicBlockInfo.bb; // save previous BasicBlock
+    // save previous BasicBlock to be able to determine incoming edge
+    basicBlockInfo.prevbb = basicBlockInfo.bb;
+
     basicBlockInfo.bb = bb;
     basicBlockInfo.liveRegisters.clear();
 
@@ -270,9 +272,14 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
 
 void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
                                            bool writeToLocalDelta) {
+  // This method is called after the execution of bb to clean up the local
+  // delta, but also set locals to NULL within KLEE.
+  // The parameter "writeToLocalDelta" can be set to false in order to omit
+  // changes to a local delta that will be discarded immediately after.
 
   updateBasicBlockInfo(bb);
 
+  // holds all locals that were consumed during the execution of bb
   std::vector<llvm::Value *> consumedRegs;
 
   const llvm::Instruction *ti = bb->getTerminator();
@@ -287,14 +294,15 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
                      << inst->getName() << "\n";
       }
       if (writeToLocalDelta) {
-        // remove local from delta
+        // remove local from local delta
         unregisterLocal(inst);
       }
-      // set local within KLEE to zero to mark them as dead
+      // set local within KLEE to NULL to mark it as dead
       clearLocal(inst);
     }
   }
 
+  // handle uses of values by PHI nodes
   for (auto it = bb->begin(), e = bb->end(); it != e; ++it) {
     const llvm::Instruction &i = *it;
     if (i.getOpcode() == llvm::Instruction::PHI) {
@@ -303,22 +311,25 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
                       basicBlockInfo.liveRegisters.end(),
                       use->get()) != basicBlockInfo.liveRegisters.end())
         {
-          // register is live, do unregister or clear
+          // register is live at the end of the basic block,
+          // do not unregister or clear
           continue;
         } else if (std::find(consumedRegs.begin(),
                              consumedRegs.end(),
                              use->get()) != consumedRegs.end())
         {
-          // register is consumed, do unregister or clear
+          // register was consumed during the execution of the basic block,
+          // was already cleared and possibly unregistered
           continue;
         } else {
+          // register is only consumed by PHI node
           llvm::Instruction *inst = dyn_cast<llvm::Instruction>(use->get());
           if (!inst) continue;
           if (writeToLocalDelta) {
-            // remove local from delta
+            // remove local from local delta
             unregisterLocal(inst);
           }
-          // set local within KLEE to zero to mark them as dead
+          // set local within KLEE to NULL to mark it as dead
           clearLocal(inst);
         }
       }
@@ -327,7 +338,7 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
       // "There must be no non-phi instructions between the start of a basic
       //  block and the PHI instructions: i.e. PHI instructions must be first
       //  in a basic block."
-      // Thus, we can abort as soon as we encounter a non-phi instruction
+      // Thus, we can abort as soon as we encounter a non-phi instruction.
       break;
     }
   }
@@ -344,6 +355,8 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
 
   updateBasicBlockInfo(dst);
 
+  unregisterKilledLocals(dst, src);
+
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "live variables at the end of " << dst->getName() << ": {";
     for (std::size_t i = 0; i < basicBlockInfo.liveRegisters.size(); ++i) {
@@ -357,9 +370,13 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
     llvm::errs() << "}\n";
   }
 
+  registerBasicBlock(getKInstruction(dst));
+}
 
-  // kill registers
-  //
+void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
+                                         const llvm::BasicBlock *src) {
+  // kill registers based on incoming edge (edge from src to dst)
+
   // liveregister.killed:
   //
   // +-- edges
@@ -372,45 +389,45 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
 
   const llvm::Instruction *inst = &*dst->begin();
   if (llvm::MDNode *edges = inst->getMetadata("liveregister.killed")) {
+    llvm::MDNode *edge = nullptr;
     for (std::size_t i = 0; i < edges->getNumOperands(); ++i) {
       llvm::Value *edgeValue = edges->getOperand(i);
-      if (llvm::MDNode *edge = dyn_cast<llvm::MDNode>(edgeValue)) {
-        if (edge->getNumOperands() != 2) {
-          llvm::errs() << "MemoryState: liveregister.killed metadata is in "
-                       << "wrong shape\n";
-        }
+      if ((edge = dyn_cast<llvm::MDNode>(edgeValue))) {
+        assert(edge->getNumOperands() == 2 &&
+          "MemoryState: liveregister.killed metadata in wrong shape");
         llvm::Value *bbValue = edge->getOperand(0);
         llvm::BasicBlock *bb = dyn_cast<llvm::BasicBlock>(bbValue);
-        if (bb != nullptr) {
-          if (bb != src) {
-            // wrong edge: no evaluation of registers to kill, go to next edge
-            continue;
-          }
-        } else {
-          llvm::errs() << "MemoryState: liveregister.killed metadata does not "
-                       << "reference valid basic block\n";
-        }
-
-        llvm::Value *killsValue = edge->getOperand(1);
-        llvm::MDNode *killsNode = dyn_cast<llvm::MDNode>(killsValue);
-        for (std::size_t j = 0; j < killsNode->getNumOperands(); ++j) {
-          llvm::Value *kill = killsNode->getOperand(j);
-          llvm::Instruction *inst = static_cast<llvm::Instruction *>(kill);
-          if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-            llvm::errs() << "MemoryState: not live anymore: "
-                         << inst->getName() << "\n";
-          }
-          unregisterLocal(inst);
-          clearLocal(inst);
+        assert(bb != nullptr && "MemoryState: liveregister.killed metadata"
+          "does not reference valid basic block");
+        if (bb != src) {
+          // wrong edge: no evaluation of registers to kill, go to next edge
+          continue;
         }
 
         // correct edge was found, loop can be terminated
         break;
       }
     }
-  }
 
-  registerBasicBlock(getKInstruction(dst));
+    if (edge != nullptr) {
+      // unregister and clear locals that are not live at the end of dst
+      llvm::Value *killsValue = edge->getOperand(1);
+      llvm::MDNode *killsNode = dyn_cast<llvm::MDNode>(killsValue);
+      for (std::size_t j = 0; j < killsNode->getNumOperands(); ++j) {
+        llvm::Value *kill = killsNode->getOperand(j);
+        llvm::Instruction *inst = static_cast<llvm::Instruction *>(kill);
+        if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+          llvm::errs() << "MemoryState: not live anymore: "
+                       << inst->getName() << "\n";
+        }
+        // remove local from local delta
+        unregisterLocal(inst);
+        // set local within KLEE to NULL to mark it as dead
+        clearLocal(inst);
+      }
+    }
+
+  }
 }
 
 KInstruction *MemoryState::getKInstruction(const llvm::BasicBlock* bb) {
@@ -595,10 +612,10 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
   }
 
   if (trace.getNumberOfStackFrames() > 0) {
-    // Even though the fingerprint delta (that contains registers) is removed in
-    // the next step, we have to clear consumed locals within KLEE to be able to
-    // determine which variable has already been registered during another call
-    // to the function we are currently leaving.
+    // Even though the local delta is removed in the next step, we have to clear
+    // consumed locals within KLEE to be able to determine which variable has
+    // already been registered during another call to the function we are
+    // currently leaving.
     unregisterConsumedLocals(returningBB, false);
 
     MemoryTrace::StackFrameEntry sfe = trace.popFrame();
