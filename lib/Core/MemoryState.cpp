@@ -275,25 +275,25 @@ void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
 
   std::vector<llvm::Value *> consumedRegs;
 
-    const llvm::Instruction *ti = bb->getTerminator();
-    llvm::MDNode *consumedRegisters = ti->getMetadata("liveregister.consumed");
-    if (consumedRegisters != nullptr) {
-      for (std::size_t i = 0; i < consumedRegisters->getNumOperands(); ++i) {
-        llvm::Value *consumed = consumedRegisters->getOperand(i);
-        consumedRegs.push_back(consumed);
-        llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
-        if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-          llvm::errs() << "MemoryState: consumed by previous basic block: "
-                       << inst->getName() << "\n";
-        }
-        if (unregister) {
-          // remove local from delta
-          unregisterLocal(inst);
-        }
-        // set local within KLEE to zero to mark them as dead
-        clearLocal(inst);
+  const llvm::Instruction *ti = bb->getTerminator();
+  llvm::MDNode *consumedRegisters = ti->getMetadata("liveregister.consumed");
+  if (consumedRegisters != nullptr) {
+    for (std::size_t i = 0; i < consumedRegisters->getNumOperands(); ++i) {
+      llvm::Value *consumed = consumedRegisters->getOperand(i);
+      consumedRegs.push_back(consumed);
+      llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+        llvm::errs() << "MemoryState: consumed by previous basic block: "
+                     << inst->getName() << "\n";
       }
+      if (unregister) {
+        // remove local from delta
+        unregisterLocal(inst);
+      }
+      // set local within KLEE to zero to mark them as dead
+      clearLocal(inst);
     }
+  }
 
   for (auto it = bb->begin(), e = bb->end(); it != e; ++it) {
     const llvm::Instruction &i = *it;
@@ -368,7 +368,7 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
   //   (precedingBasicBlock1, (killedRegister1, killedRegister2)), // edge 1
   //   (precedingBasicBlock2, (killedRegister3, killedRegister3))  // edge 2
   // ) |                      |
-  //   +-- edge              +-- kills
+  //   +-- edge               +-- kills
 
   const llvm::Instruction *inst = &*dst->begin();
   if (llvm::MDNode *edges = inst->getMetadata("liveregister.killed")) {
