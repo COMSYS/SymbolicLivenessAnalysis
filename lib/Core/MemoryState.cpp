@@ -160,7 +160,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
   llvm::Instruction *inst = target->inst;
   if (inst->getParent() != basicBlockInfo.bb) {
-    populateLiveRegisters(inst->getParent());
+    updateBasicBlockInfo(inst->getParent());
   }
   llvm::Value *instValue = static_cast<llvm::Value *>(inst);
   if (std::find(basicBlockInfo.liveRegisters.begin(),
@@ -241,7 +241,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
 }
 
 
-void MemoryState::populateLiveRegisters(const llvm::BasicBlock *bb) {
+void MemoryState::updateBasicBlockInfo(const llvm::BasicBlock *bb) {
   if (basicBlockInfo.bb != bb) {
     basicBlockInfo.prevbb = basicBlockInfo.bb; // save previous BasicBlock
     basicBlockInfo.bb = bb;
@@ -264,14 +264,14 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
   }
 
   llvm::BasicBlock *bb = inst->inst->getParent();
-  populateLiveRegisters(bb);
+  updateBasicBlockInfo(bb);
   trace.registerBasicBlock(inst, fingerprint.getFingerprint());
 }
 
 void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
                                        bool unregister) {
 
-  populateLiveRegisters(bb);
+  updateBasicBlockInfo(bb);
 
   std::vector<llvm::Value *> consumedRegs;
 
@@ -342,7 +342,7 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
 
   removeConsumedLocals(src);
 
-  populateLiveRegisters(dst);
+  updateBasicBlockInfo(dst);
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "live variables at the end of " << dst->getName() << ": {";
@@ -616,7 +616,7 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
     // be entered
     fingerprint.setAllocaDeltaToPreviousValue(sfe.fingerprintAllocaDelta);
 
-    populateLiveRegisters(callerBB);
+    updateBasicBlockInfo(callerBB);
 
     globalAllocationsInCurrentStackFrame = sfe.globalAllocation;
 

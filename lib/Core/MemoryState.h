@@ -51,7 +51,7 @@ private:
 
   static std::string ExprString(ref<Expr> expr);
 
-  void populateLiveRegisters(const llvm::BasicBlock *bb);
+  void updateBasicBlockInfo(const llvm::BasicBlock *bb);
   KInstruction *getKInstruction(const llvm::BasicBlock* bb);
   KInstruction *getKInstruction(const llvm::Instruction* inst);
   ref<Expr> getLocalValue(const KInstruction *kinst);
