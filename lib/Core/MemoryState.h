@@ -59,7 +59,8 @@ private:
   void clearLocal(const KInstruction *kinst);
   void clearLocal(const llvm::Instruction *inst);
 
-  void removeConsumedLocals(const llvm::BasicBlock *bb, bool unregister = true);
+  void unregisterConsumedLocals(const llvm::BasicBlock *bb,
+                                bool writeToLocalDelta = true);
 
   void registerLocal(const llvm::Instruction *inst, ref<Expr> value);
   void unregisterLocal(const llvm::Instruction *inst) {

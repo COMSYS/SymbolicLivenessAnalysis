@@ -268,8 +268,8 @@ void MemoryState::registerBasicBlock(const KInstruction *inst) {
   trace.registerBasicBlock(inst, fingerprint.getFingerprint());
 }
 
-void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
-                                       bool unregister) {
+void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
+                                           bool writeToLocalDelta) {
 
   updateBasicBlockInfo(bb);
 
@@ -286,7 +286,7 @@ void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
         llvm::errs() << "MemoryState: consumed by previous basic block: "
                      << inst->getName() << "\n";
       }
-      if (unregister) {
+      if (writeToLocalDelta) {
         // remove local from delta
         unregisterLocal(inst);
       }
@@ -314,7 +314,7 @@ void MemoryState::removeConsumedLocals(const llvm::BasicBlock *bb,
         } else {
           llvm::Instruction *inst = dyn_cast<llvm::Instruction>(use->get());
           if (!inst) continue;
-          if (unregister) {
+          if (writeToLocalDelta) {
             // remove local from delta
             unregisterLocal(inst);
           }
@@ -340,7 +340,7 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
                  << " (coming from " << src->getName() << ")\n";
   }
 
-  removeConsumedLocals(src);
+  unregisterConsumedLocals(src);
 
   updateBasicBlockInfo(dst);
 
@@ -599,7 +599,7 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
     // the next step, we have to clear consumed locals within KLEE to be able to
     // determine which variable has already been registered during another call
     // to the function we are currently leaving.
-    removeConsumedLocals(returningBB, false);
+    unregisterConsumedLocals(returningBB, false);
 
     MemoryTrace::StackFrameEntry sfe = trace.popFrame();
 
