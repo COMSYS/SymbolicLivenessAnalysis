@@ -259,17 +259,6 @@ void MemoryState::updateBasicBlockInfo(const llvm::BasicBlock *bb) {
   }
 }
 
-void MemoryState::registerBasicBlock(const KInstruction *inst) {
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: BASICBLOCK [fingerprint: "
-                 << fingerprint.getFingerprintAsString() << "]\n";
-  }
-
-  llvm::BasicBlock *bb = inst->inst->getParent();
-  updateBasicBlockInfo(bb);
-  trace.registerBasicBlock(inst, fingerprint.getFingerprint());
-}
-
 void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
                                            bool writeToLocalDelta) {
   // This method is called after the execution of bb to clean up the local
@@ -344,17 +333,11 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
   }
 }
 
-void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
-                                     const llvm::BasicBlock *src) {
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "registerBasicBlock " << dst->getName()
-                 << " (coming from " << src->getName() << ")\n";
-  }
 
+void MemoryState::enterBasicBlock(const llvm::BasicBlock *dst,
+                                  const llvm::BasicBlock *src) {
   unregisterConsumedLocals(src);
-
   updateBasicBlockInfo(dst);
-
   unregisterKilledLocals(dst, src);
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
@@ -369,8 +352,36 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
     }
     llvm::errs() << "}\n";
   }
+}
 
-  registerBasicBlock(getKInstruction(dst));
+void MemoryState::registerEntryBasicBlock(const llvm::BasicBlock *entry) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+    llvm::errs() << "MemoryState: entry BASICBLOCK" << entry->getName()
+                 << " [fingerprint: "
+                 << fingerprint.getFingerprintAsString() << "]\n";
+  }
+
+  // entry basic blocks have no predecessor from which we would have to clean up
+  // using enterBasicBlock
+  updateBasicBlockInfo(entry);
+
+  const KInstruction *inst = getKInstruction(entry);
+  trace.registerBasicBlock(inst, fingerprint.getFingerprint());
+}
+
+void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
+                                     const llvm::BasicBlock *src) {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+    llvm::errs() << "MemoryState: BASICBLOCK " << dst->getName()
+                 << " (coming from " << src->getName() << ")"
+                 << " [fingerprint: "
+                 << fingerprint.getFingerprintAsString() << "]\n";
+  }
+
+  assert(dst == basicBlockInfo.bb && "basic block was not properly entered!");
+
+  const KInstruction *inst = getKInstruction(dst);
+  trace.registerBasicBlock(inst, fingerprint.getFingerprint());
 }
 
 void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,

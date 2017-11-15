@@ -127,7 +127,10 @@ public:
 
   void registerExternalFunctionCall();
 
-  void registerBasicBlock(const KInstruction *inst);
+  void enterBasicBlock(const llvm::BasicBlock *dst,
+                       const llvm::BasicBlock *src);
+
+  void registerEntryBasicBlock(const llvm::BasicBlock *entry);
   void registerBasicBlock(const llvm::BasicBlock *dst,
                           const llvm::BasicBlock *src);
 

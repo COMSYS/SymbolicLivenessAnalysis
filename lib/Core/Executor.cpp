@@ -1441,7 +1441,7 @@ void Executor::executeCall(ExecutionState &state,
       bindArgument(kf, i, state, arguments[i]);
 
     if (DetectInfiniteLoops) {
-      state.memoryState.registerBasicBlock(state.pc);
+      state.memoryState.registerEntryBasicBlock(state.pc->inst->getParent());
       if (state.memoryState.findLoop()) {
         terminateStateOnError(state, "infinite loop",
                               InfiniteLoop);
@@ -1473,12 +1473,13 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     state.incomingBBIndex = first->getBasicBlockIndex(src);
   }
   if (DetectInfiniteLoops) {
-    // registerBasicBlock updates live register information, thus we need to
-    // call registerBasicBlock on every BasicBlock change, not only on ones to
-    // a BasicBlock with more than one predecessor
-    state.memoryState.registerBasicBlock(dst, src);
+    // enterBasicBlock updates live register information, thus we need to call
+    // it on every BasicBlock change, not only on ones to a BasicBlock with more
+    // than one predecessor
+    state.memoryState.enterBasicBlock(dst, src);
     if (dst->getSinglePredecessor() == nullptr) {
       // more than one predecessor
+      state.memoryState.registerBasicBlock(dst, src);
       if (state.memoryState.findLoop()) {
         terminateStateOnError(state, "infinite loop",
                               InfiniteLoop);
