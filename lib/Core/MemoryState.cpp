@@ -6,6 +6,7 @@
 #include "klee/ExecutionState.h"
 #include "klee/Internal/Module/Cell.h"
 #include "klee/Internal/Module/InstructionInfoTable.h"
+#include "klee/Internal/Module/KModule.h"
 #include "klee/Internal/Support/ErrorHandling.h"
 
 #include "llvm/Support/raw_ostream.h"
@@ -13,13 +14,110 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
 
 #include <cmath>
 #include <iomanip>
 #include <sstream>
 
 namespace klee {
+
+KModule *MemoryState::listInitializedForKModule = nullptr;
+std::vector<llvm::Function *> MemoryState::outputFunctionsWhitelist;
+std::vector<llvm::Function *> MemoryState::inputFunctionsBlacklist;
+
+void MemoryState::initializeLists(KModule *kmodule) {
+  if (listInitializedForKModule != nullptr) return;
+
+  const char* outputFunctions[] = {
+    // stdio.h
+    "fputc", "putc", "fputwc", "putwc", "fputs", "fputws", "putchar",
+    "putwchar", "puts", "printf", "fprintf", "sprintf", "snprintf", "wprintf",
+    "fwprintf", "swprintf", "vprintf", "vfprintf", "vsprintf", "vsnprintf",
+    "vwprintf", "vfwprintf", "vswprintf", "perror",
+
+    // POSIX
+    "write"
+  };
+
+  const char* inputFunctions[] = {
+    // stdio.h
+    "fopen", "freopen", "fread", "fgetc", "getc", "fgetwc", "getwc", "fgets",
+    "fgetws", "getchar", "getwchar", "gets", "scanf", "fscanf", "sscanf",
+    "wscanf", "fwscanf", "swscanf", "vscanf", "vfscanf", "vsscanf", "vwscanf",
+    "vfwscanf", "vswscanf", "ftell", "ftello", "fseek", "fseeko", "fgetpos",
+    "fsetpos", "feof", "ferror",
+
+    // POSIX
+    "open", "creat", "socket", "accept", "socketpair", "pipe", "opendir",
+    "dirfd", "fileno", "read", "readv", "pread", "recv", "recvmsg", "lseek",
+    "fstat", "fdopen", "ftruncate", "fsync", "fdatasync", "fstatvfs",
+    "select", "pselect", "poll", "epoll", "flock", "fcntl", "lockf",
+
+    // dirent.h
+    "opendir", "readdir", "readdir_r", "telldir",
+
+    // future POSIX
+    "openat", "faccessat", "fstatat", "readlinkat", "fdopendir",
+
+    // LFS
+    "fgetpos64", "fopen64", "freopen64", "fseeko64", "fsetpos64", "ftello64",
+    "fstat64", "lstat64", "open64", "readdir64", "stat64"
+  };
+
+  std::vector<llvm::Function *> whitelist;
+  for (const char *f : outputFunctions) {
+    whitelist.emplace_back(kmodule->module->getFunction(f));
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: output function added to whitelist: " << f
+                   << "\n";
+    }
+  }
+  std::sort(whitelist.begin(), whitelist.end());
+  outputFunctionsWhitelist = whitelist;
+
+  std::vector<llvm::Function *> blacklist;
+  for (const char *f : inputFunctions) {
+    blacklist.emplace_back(kmodule->module->getFunction(f));
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: input function added to blacklist: " << f
+                   << "\n";
+    }
+  }
+  std::sort(blacklist.begin(), blacklist.end());
+  inputFunctionsBlacklist = blacklist;
+
+  listInitializedForKModule = kmodule;
+}
+
+void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f) {
+  initializeLists(kmodule);
+  assert(listInitializedForKModule == kmodule && "can only handle one KModule");
+
+  if (outputFunction.entered) {
+    return;
+  }
+
+  if (std::binary_search(inputFunctionsBlacklist.begin(),
+                         inputFunctionsBlacklist.end(),
+                         f)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: blacklisted input function call to "
+                   << f->getName() << "()\n";
+    }
+    clearEverything();
+  } else if (std::binary_search(outputFunctionsWhitelist.begin(),
+                                outputFunctionsWhitelist.end(),
+                                f)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: whitelisted output function call to "
+                   << f->getName() << "()\n";
+    }
+    enterOutputFunction(f);
+  }
+}
 
 void MemoryState::clearEverything() {
   trace.clear();

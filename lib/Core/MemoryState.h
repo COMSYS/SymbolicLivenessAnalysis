@@ -9,10 +9,11 @@
 #include "klee/Internal/Module/KInstruction.h"
 #include "klee/Internal/Module/KModule.h"
 
-// only needed for unregisterLocal
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Function.h"
 
 #include <cstdint>
+#include <vector>
 
 namespace llvm {
 class BasicBlock;
@@ -48,6 +49,12 @@ private:
     const llvm::BasicBlock *prevbb = nullptr;
     std::vector<llvm::Value *> liveRegisters;
   } basicBlockInfo;
+
+  static KModule *listInitializedForKModule;
+  static std::vector<llvm::Function *> outputFunctionsWhitelist;
+  static std::vector<llvm::Function *> inputFunctionsBlacklist;
+
+  static void initializeLists(KModule *kmodule);
 
   static std::string ExprString(ref<Expr> expr);
 
@@ -135,6 +142,8 @@ public:
                           const llvm::BasicBlock *src);
 
   bool findLoop();
+
+  void registerFunctionCall(KModule *kmodule, llvm::Function *f);
 
   bool enterOutputFunction(llvm::Function *f);
   void leaveOutputFunction();
