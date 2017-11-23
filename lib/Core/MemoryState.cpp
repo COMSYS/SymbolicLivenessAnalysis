@@ -31,9 +31,10 @@ std::vector<llvm::Function *> MemoryState::inputFunctionsBlacklist;
 void MemoryState::initializeLists(KModule *kmodule) {
   if (listInitializedForKModule != nullptr) return;
 
+  // whitelist
   const char* outputFunctions[] = {
     // stdio.h
-    "fputc", "putc", "fputwc", "putwc", "fputs", "fputws", "putchar",
+    "fflush", "fputc", "putc", "fputwc", "putwc", "fputs", "fputws", "putchar",
     "putwchar", "puts", "printf", "fprintf", "sprintf", "snprintf", "wprintf",
     "fwprintf", "swprintf", "vprintf", "vfprintf", "vsprintf", "vsnprintf",
     "vwprintf", "vfwprintf", "vswprintf", "perror",
@@ -42,6 +43,7 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "write"
   };
 
+  // blacklist
   const char* inputFunctions[] = {
     // stdio.h
     "fopen", "freopen", "fread", "fgetc", "getc", "fgetwc", "getwc", "fgets",
