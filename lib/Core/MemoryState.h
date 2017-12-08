@@ -33,6 +33,8 @@ private:
   const ExecutionState *executionState = nullptr;
   bool globalAllocationsInCurrentStackFrame = false;
 
+  bool disableMemoryState = false;
+
   struct outputFunction {
     bool entered = false;
     llvm::Function *function = nullptr;
@@ -86,6 +88,10 @@ private:
                      << "]\n";
       }
     }
+  }
+
+  void updateDisableMemoryState() {
+    disableMemoryState = libraryFunction.entered || outputFunction.entered;
   }
 
 public:

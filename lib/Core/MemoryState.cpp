@@ -95,12 +95,13 @@ void MemoryState::initializeLists(KModule *kmodule) {
 }
 
 void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f) {
+  if (disableMemoryState) {
+    return;
+  }
+
   initializeLists(kmodule);
   assert(listInitializedForKModule == kmodule && "can only handle one KModule");
 
-  if (outputFunction.entered) {
-    return;
-  }
 
   if (std::binary_search(inputFunctionsBlacklist.begin(),
                          inputFunctionsBlacklist.end(),
@@ -143,7 +144,7 @@ void MemoryState::registerExternalFunctionCall() {
 
 void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                                 const ObjectState &os, std::size_t bytes) {
-  if (libraryFunction.entered || outputFunction.entered) {
+  if (disableMemoryState) {
     return;
   }
 
@@ -250,7 +251,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 }
 
 void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
-  if (libraryFunction.entered || outputFunction.entered) {
+  if (disableMemoryState) {
     return;
   }
 
@@ -282,7 +283,7 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
 
 void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
 {
-  if (libraryFunction.entered || outputFunction.entered) {
+  if (disableMemoryState) {
     return;
   }
 
@@ -311,7 +312,7 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
 
 void MemoryState::registerArgument(const KFunction *kf, unsigned index,
                                    ref<Expr> value) {
-  if (libraryFunction.entered || outputFunction.entered) {
+  if (disableMemoryState) {
     return;
   }
 
@@ -592,7 +593,7 @@ void MemoryState::clearLocal(const llvm::Instruction *inst) {
 
 
 bool MemoryState::findLoop() {
-  if (libraryFunction.entered || outputFunction.entered) {
+  if (disableMemoryState) {
     // we do not want to find infinite loops in library or output functions
     return false;
   }
@@ -624,6 +625,8 @@ bool MemoryState::enterOutputFunction(llvm::Function *f) {
   outputFunction.entered = true;
   outputFunction.function = f;
 
+  updateDisableMemoryState();
+
   return true;
 }
 
@@ -635,6 +638,8 @@ void MemoryState::leaveOutputFunction() {
 
   outputFunction.entered = false;
   outputFunction.function = nullptr;
+
+  updateDisableMemoryState();
 }
 
 bool MemoryState::isInOutputFunction(llvm::Function *f) {
@@ -663,6 +668,8 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f,
   libraryFunction.mo = mo;
   libraryFunction.bytes = bytes;
 
+  updateDisableMemoryState();
+
   return true;
 }
 
@@ -682,6 +689,8 @@ void MemoryState::leaveLibraryFunction(const ObjectState *os) {
 
   libraryFunction.entered = false;
   libraryFunction.function = nullptr;
+
+  updateDisableMemoryState();
 
   registerWrite(libraryFunction.address, *libraryFunction.mo, *os,
     libraryFunction.bytes);
