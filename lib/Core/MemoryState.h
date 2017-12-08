@@ -26,9 +26,11 @@ class ExecutionState;
 class MemoryState {
 
 private:
+  MemoryState(const MemoryState &) = default;
+
   MemoryFingerprint fingerprint;
   MemoryTrace trace;
-  const ExecutionState &executionState;
+  const ExecutionState *executionState = nullptr;
   bool globalAllocationsInCurrentStackFrame = false;
 
   struct outputFunction {
@@ -88,12 +90,13 @@ private:
 
 public:
   MemoryState() = delete;
-  MemoryState(const MemoryState &) = delete;
   MemoryState& operator=(const MemoryState&) = delete;
 
-  MemoryState(const ExecutionState &state) : executionState(state) {}
-  MemoryState(const MemoryState &, const ExecutionState &state)
-    : executionState(state) {}
+  MemoryState(const ExecutionState *state) : executionState(state) {}
+  MemoryState(const MemoryState &from, const ExecutionState *state)
+    : MemoryState(from) {
+    executionState = state;
+ }
 
   void clearEverything();
 

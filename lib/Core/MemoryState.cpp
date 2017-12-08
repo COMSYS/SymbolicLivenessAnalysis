@@ -167,8 +167,8 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 
   if (mo.isLocal) {
     isLocal = true;
-    if (!trace.isAllocaAllocationInCurrentStackFrame(executionState, mo)) {
-      externalDelta = trace.findAllocaAllocationStackFrame(executionState, mo);
+    if (!trace.isAllocaAllocationInCurrentStackFrame(*executionState, mo)) {
+      externalDelta = trace.findAllocaAllocationStackFrame(*executionState, mo);
       if (externalDelta == nullptr) {
         // allocation was made in previous stack frame that is not available
         // anymore due to an external function call
@@ -542,7 +542,7 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
 }
 
 KInstruction *MemoryState::getKInstruction(const llvm::BasicBlock* bb) {
-  KFunction *kf = executionState.stack.back().kf;
+  KFunction *kf = executionState->stack.back().kf;
   unsigned entry = kf->basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)];
   return kf->instructions[entry];
 }
@@ -551,7 +551,7 @@ KInstruction *MemoryState::getKInstruction(const llvm::Instruction* inst) {
   // FIXME: ugly hack
   llvm::BasicBlock *bb = const_cast<llvm::BasicBlock *>(inst->getParent());
   if (bb != nullptr) {
-    KFunction *kf = executionState.stack.back().kf;
+    KFunction *kf = executionState->stack.back().kf;
     if (kf != nullptr) {
       unsigned entry = kf->basicBlockEntry[bb];
       while ((entry + 1) < kf->numInstructions
@@ -566,7 +566,7 @@ KInstruction *MemoryState::getKInstruction(const llvm::Instruction* inst) {
 }
 
 ref<Expr> MemoryState::getLocalValue(const KInstruction *kinst) {
-  return executionState.stack.back().locals[kinst->dest].value;
+  return executionState->stack.back().locals[kinst->dest].value;
 }
 
 ref<Expr> MemoryState::getLocalValue(const llvm::Instruction *inst) {
@@ -578,7 +578,7 @@ ref<Expr> MemoryState::getLocalValue(const llvm::Instruction *inst) {
 }
 
 void MemoryState::clearLocal(const KInstruction *kinst) {
-  executionState.stack.back().locals[kinst->dest].value = nullptr;
+  executionState->stack.back().locals[kinst->dest].value = nullptr;
   assert(getLocalValue(kinst).isNull());
 }
 
