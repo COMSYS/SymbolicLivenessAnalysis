@@ -121,6 +121,7 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
                    << f->getName() << "()\n";
     }
     clearEverything();
+    enterListedFunction(f);
   } else if (std::binary_search(outputFunctionsWhitelist.begin(),
                                 outputFunctionsWhitelist.end(),
                                 f)) {

@@ -3089,8 +3089,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   }
 
   // there is no new stack frame for external functions and thus no return
-  // hence we have to immediately leave output and library functions if they
-  // are an external call
+  // hence we have to immediately leave any function that is external call
   if (DetectInfiniteLoops) {
     if (state.memoryState.isInLibraryFunction(function)) {
       state.memoryState.leaveLibraryFunction();
