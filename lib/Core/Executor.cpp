@@ -1415,7 +1415,8 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
     // it on every BasicBlock change, not only on ones to a BasicBlock with more
     // than one predecessor
     state.memoryState.enterBasicBlock(dst, src);
-    if (dst->getSinglePredecessor() == nullptr) {
+    if ((dst->getSinglePredecessor() == nullptr) ||
+        InfiniteLoopDetectionDisableTwoPredecessorOpt) {
       // more than one predecessor
       state.memoryState.registerBasicBlock(dst, src);
       if (state.memoryState.findLoop()) {

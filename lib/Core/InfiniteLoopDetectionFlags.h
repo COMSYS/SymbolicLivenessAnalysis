@@ -16,5 +16,7 @@ extern llvm::cl::bits<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection
 
 extern llvm::cl::opt<bool> InfiniteLoopDetectionTruncateOnFork;
 
+extern llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt;
+
 }
 #endif
