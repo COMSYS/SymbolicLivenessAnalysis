@@ -157,6 +157,15 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
   }
 }
 
+void MemoryState::registerFunctionRet(llvm::Function *f) {
+  if (isInListedFunction(f)) {
+    leaveListedFunction();
+  } else if (isInLibraryFunction(f)) {
+    leaveLibraryFunction();
+  }
+}
+
+
 void MemoryState::clearEverything() {
   trace.clear();
   fingerprint.discardEverything();

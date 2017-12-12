@@ -1500,11 +1500,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     if (DetectInfiniteLoops) {
       Function *callee = sf.kf->function;
-      if (state.memoryState.isInLibraryFunction(callee)) {
-        state.memoryState.leaveLibraryFunction();
-      } else if (state.memoryState.isInListedFunction(callee)) {
-        state.memoryState.leaveListedFunction();
-      }
+      state.memoryState.registerFunctionRet(callee);
     }
 
     if (!isVoidReturn) {
@@ -3091,11 +3087,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   // there is no new stack frame for external functions and thus no return
   // hence we have to immediately leave any function that is external call
   if (DetectInfiniteLoops) {
-    if (state.memoryState.isInLibraryFunction(function)) {
-      state.memoryState.leaveLibraryFunction();
-    } else if (state.memoryState.isInListedFunction(function)) {
-      state.memoryState.leaveListedFunction();
-    }
+    state.memoryState.registerFunctionRet(function);
   }
 
   Type *resultType = target->inst->getType();

@@ -68,6 +68,15 @@ private:
 
   static std::string ExprString(ref<Expr> expr);
 
+  bool enterListedFunction(llvm::Function *f);
+  void leaveListedFunction();
+  bool isInListedFunction(llvm::Function *f);
+
+  bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
+    const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
+  bool isInLibraryFunction(llvm::Function *f);
+  void leaveLibraryFunction();
+
   void updateBasicBlockInfo(const llvm::BasicBlock *bb);
   KInstruction *getKInstruction(const llvm::BasicBlock* bb);
   KInstruction *getKInstruction(const llvm::Instruction* inst);
@@ -121,6 +130,10 @@ public:
     updateDisableMemoryState();
   }
 
+  void registerFunctionCall(KModule *kmodule, llvm::Function *f,
+                            std::vector<ref<Expr>> &arguments);
+  void registerFunctionRet(llvm::Function *f);
+
   void clearEverything();
 
   void registerWrite(ref<Expr> address, const MemoryObject &mo,
@@ -168,18 +181,6 @@ public:
                           const llvm::BasicBlock *src);
 
   bool findLoop();
-
-  void registerFunctionCall(KModule *kmodule, llvm::Function *f,
-                            std::vector<ref<Expr>> &arguments);
-
-  bool enterListedFunction(llvm::Function *f);
-  void leaveListedFunction();
-  bool isInListedFunction(llvm::Function *f);
-
-  bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
-    const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
-  bool isInLibraryFunction(llvm::Function *f);
-  void leaveLibraryFunction();
 
   void registerPushFrame(const KFunction *kf);
   void registerPopFrame(const llvm::BasicBlock *returningBB,
