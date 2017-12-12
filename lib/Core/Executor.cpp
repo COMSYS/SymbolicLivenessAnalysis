@@ -900,6 +900,10 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
     TimerStatIncrementer timer(stats::forkTime);
     ExecutionState *falseState, *trueState = &current;
 
+    if (DetectInfiniteLoops && InfiniteLoopDetectionTruncateOnFork) {
+      current.memoryState.clearEverything();
+    }
+
     ++stats::forks;
 
     falseState = trueState->branch();

@@ -18,4 +18,9 @@ llvm::cl::bits<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection(
         clEnumValEnd),
   llvm::cl::CommaSeparated);
 
+llvm::cl::opt<bool> InfiniteLoopDetectionTruncateOnFork(
+  "infinite-loop-detection-truncate-on-fork",
+  llvm::cl::desc("Truncate memory trace (used for infinite loop detection) on every state fork (default=false)"),
+  llvm::cl::init(false));
+
 }
