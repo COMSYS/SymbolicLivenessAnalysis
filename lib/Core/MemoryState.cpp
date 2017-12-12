@@ -116,7 +116,7 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f) {
       llvm::errs() << "MemoryState: whitelisted output function call to "
                    << f->getName() << "()\n";
     }
-    enterOutputFunction(f);
+    enterListedFunction(f);
   }
 }
 
@@ -126,7 +126,7 @@ void MemoryState::clearEverything() {
 }
 
 void MemoryState::registerExternalFunctionCall() {
-  if (outputFunction.entered) {
+  if (listedFunction.entered) {
     return;
   }
 
@@ -607,11 +607,11 @@ bool MemoryState::findLoop() {
   return result;
 }
 
-bool MemoryState::enterOutputFunction(llvm::Function *f) {
-  if (outputFunction.entered) {
-    // we can only enter one output function at a time
-    // (we do not need to register additional output functions called by e.g.
-    // printf)
+bool MemoryState::enterListedFunction(llvm::Function *f) {
+  if (listedFunction.entered) {
+    // we can only enter one listed function at a time
+    // (we do not need to register additional functions calls by the entered
+    // function such as printf)
     return false;
   }
 
@@ -620,28 +620,28 @@ bool MemoryState::enterOutputFunction(llvm::Function *f) {
                  << f->getName() << "\n";
   }
 
-  outputFunction.entered = true;
-  outputFunction.function = f;
+  listedFunction.entered = true;
+  listedFunction.function = f;
 
   updateDisableMemoryState();
 
   return true;
 }
 
-void MemoryState::leaveOutputFunction() {
+void MemoryState::leaveListedFunction() {
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: leaving output function: "
-                 << outputFunction.function->getName() << "\n";
+    llvm::errs() << "MemoryState: leaving listed function: "
+                 << listedFunction.function->getName() << "\n";
   }
 
-  outputFunction.entered = false;
-  outputFunction.function = nullptr;
+  listedFunction.entered = false;
+  listedFunction.function = nullptr;
 
   updateDisableMemoryState();
 }
 
-bool MemoryState::isInOutputFunction(llvm::Function *f) {
-  return (outputFunction.entered && f == outputFunction.function);
+bool MemoryState::isInListedFunction(llvm::Function *f) {
+  return (listedFunction.entered && f == listedFunction.function);
 }
 
 bool MemoryState::enterLibraryFunction(llvm::Function *f,

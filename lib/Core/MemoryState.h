@@ -36,10 +36,10 @@ private:
   bool disableMemoryState = false;
   bool globalDisableMemoryState = false;
 
-  struct outputFunction {
+  struct listedFunction {
     bool entered = false;
     llvm::Function *function = nullptr;
-  } outputFunction;
+  } listedFunction;
 
   struct libraryFunction {
     bool entered = false;
@@ -96,7 +96,7 @@ private:
   }
 
   void updateDisableMemoryState() {
-    disableMemoryState = libraryFunction.entered || outputFunction.entered;
+    disableMemoryState = libraryFunction.entered || listedFunction.entered;
     disableMemoryState &= !globalDisableMemoryState;
   }
 
@@ -130,7 +130,7 @@ public:
   }
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                        const ObjectState &os, std::size_t bytes) {
-    if (libraryFunction.entered || outputFunction.entered) {
+    if (libraryFunction.entered || listedFunction.entered) {
       return;
     }
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
@@ -145,7 +145,7 @@ public:
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-    if (!libraryFunction.entered && !outputFunction.entered
+    if (!libraryFunction.entered && !listedFunction.entered
       && DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "MemoryState: UNREGISTER LOCAL (KInst)\n";
@@ -170,9 +170,9 @@ public:
 
   void registerFunctionCall(KModule *kmodule, llvm::Function *f);
 
-  bool enterOutputFunction(llvm::Function *f);
-  void leaveOutputFunction();
-  bool isInOutputFunction(llvm::Function *f);
+  bool enterListedFunction(llvm::Function *f);
+  void leaveListedFunction();
+  bool isInListedFunction(llvm::Function *f);
 
   bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
     const MemoryObject *mo, const ObjectState *os, std::size_t bytes);

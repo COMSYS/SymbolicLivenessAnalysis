@@ -1530,8 +1530,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       Function *callee = sf.kf->function;
       if (state.memoryState.isInLibraryFunction(callee)) {
         state.memoryState.leaveLibraryFunction();
-      } else if (state.memoryState.isInOutputFunction(callee)) {
-        state.memoryState.leaveOutputFunction();
+      } else if (state.memoryState.isInListedFunction(callee)) {
+        state.memoryState.leaveListedFunction();
       }
     }
 
@@ -3122,8 +3122,8 @@ void Executor::callExternalFunction(ExecutionState &state,
   if (DetectInfiniteLoops) {
     if (state.memoryState.isInLibraryFunction(function)) {
       state.memoryState.leaveLibraryFunction();
-    } else if (state.memoryState.isInOutputFunction(function)) {
-      state.memoryState.leaveOutputFunction();
+    } else if (state.memoryState.isInListedFunction(function)) {
+      state.memoryState.leaveListedFunction();
     }
   }
 
