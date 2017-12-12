@@ -69,29 +69,27 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "fstat64", "lstat64", "open64", "readdir64", "stat64"
   };
 
-  std::vector<llvm::Function *> whitelist;
-  for (const char *f : outputFunctions) {
-    whitelist.emplace_back(kmodule->module->getFunction(f));
-    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-      llvm::errs() << "MemoryState: output function added to whitelist: " << f
-                   << "\n";
-    }
-  }
-  std::sort(whitelist.begin(), whitelist.end());
-  outputFunctionsWhitelist = whitelist;
-
-  std::vector<llvm::Function *> blacklist;
-  for (const char *f : inputFunctions) {
-    blacklist.emplace_back(kmodule->module->getFunction(f));
-    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-      llvm::errs() << "MemoryState: input function added to blacklist: " << f
-                   << "\n";
-    }
-  }
-  std::sort(blacklist.begin(), blacklist.end());
-  inputFunctionsBlacklist = blacklist;
+  initializeFunctionList(kmodule, outputFunctions, outputFunctionsWhitelist);
+  initializeFunctionList(kmodule, inputFunctions, inputFunctionsBlacklist);
 
   listInitializedForKModule = kmodule;
+}
+
+template <std::size_t array_size>
+void MemoryState::initializeFunctionList(KModule *kmodule,
+                                         const char* (& functions)[array_size],
+                                         std::vector<llvm::Function *> &list) {
+  std::vector<llvm::Function *> tmp;
+  for (const char *name : functions) {
+    llvm::Function *f = kmodule->module->getFunction(name);
+    if (f == nullptr) {
+        llvm::errs() << "MemoryState: could not find function in module: "
+                     << name << "\n";
+    }
+    tmp.emplace_back(f);
+  }
+  std::sort(tmp.begin(), tmp.end());
+  list = std::move(tmp);
 }
 
 void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f) {

@@ -60,6 +60,10 @@ private:
   static std::vector<llvm::Function *> inputFunctionsBlacklist;
 
   static void initializeLists(KModule *kmodule);
+  template <std::size_t array_size>
+  static void initializeFunctionList(KModule *kmodule,
+                                     const char* (& functions)[array_size],
+                                     std::vector<llvm::Function *> &list);
 
   static std::string ExprString(ref<Expr> expr);
 
