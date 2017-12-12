@@ -675,23 +675,21 @@ bool MemoryState::isInLibraryFunction(llvm::Function *f) {
   return (libraryFunction.entered && f == libraryFunction.function);
 }
 
-const MemoryObject *MemoryState::getLibraryFunctionMemoryObject() {
-  return libraryFunction.mo;
-}
-
-void MemoryState::leaveLibraryFunction(const ObjectState *os) {
+void MemoryState::leaveLibraryFunction() {
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: leaving library function: "
                  << libraryFunction.function->getName() << "\n";
   }
+
+  const MemoryObject *mo = libraryFunction.mo;
+  const ObjectState *os = executionState->addressSpace.findObject(mo);
 
   libraryFunction.entered = false;
   libraryFunction.function = nullptr;
 
   updateDisableMemoryState();
 
-  registerWrite(libraryFunction.address, *libraryFunction.mo, *os,
-    libraryFunction.bytes);
+  registerWrite(libraryFunction.address, *mo, *os, libraryFunction.bytes);
 }
 
 void MemoryState::registerPushFrame(const KFunction *kf) {

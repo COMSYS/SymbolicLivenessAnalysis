@@ -177,8 +177,7 @@ public:
   bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
     const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
   bool isInLibraryFunction(llvm::Function *f);
-  const MemoryObject *getLibraryFunctionMemoryObject();
-  void leaveLibraryFunction(const ObjectState *os);
+  void leaveLibraryFunction();
 
   void registerPushFrame(const KFunction *kf);
   void registerPopFrame(const llvm::BasicBlock *returningBB,

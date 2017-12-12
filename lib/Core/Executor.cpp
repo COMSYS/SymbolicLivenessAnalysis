@@ -1529,10 +1529,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     if (DetectInfiniteLoops) {
       Function *callee = sf.kf->function;
       if (state.memoryState.isInLibraryFunction(callee)) {
-        const MemoryObject *mo =
-          state.memoryState.getLibraryFunctionMemoryObject();
-        const ObjectState *os = state.addressSpace.findObject(mo);
-        state.memoryState.leaveLibraryFunction(os);
+        state.memoryState.leaveLibraryFunction();
       } else if (state.memoryState.isInOutputFunction(callee)) {
         state.memoryState.leaveOutputFunction();
       }
@@ -3124,10 +3121,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   // are an external call
   if (DetectInfiniteLoops) {
     if (state.memoryState.isInLibraryFunction(function)) {
-      const MemoryObject *mo =
-        state.memoryState.getLibraryFunctionMemoryObject();
-      const ObjectState *os = state.addressSpace.findObject(mo);
-      state.memoryState.leaveLibraryFunction(os);
+      state.memoryState.leaveLibraryFunction();
     } else if (state.memoryState.isInOutputFunction(function)) {
       state.memoryState.leaveOutputFunction();
     }
