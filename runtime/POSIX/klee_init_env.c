@@ -83,6 +83,10 @@ static void __add_arg(int *argc, char **argv, char *arg, int argcMax) {
 }
 
 void klee_init_env(int* argcPtr, char*** argvPtr) {
+  #ifndef KLEE_REPLAY_INIT_ENV
+  klee_disable_memory_state();
+  #endif
+
   int argc = *argcPtr;
   char** argv = *argvPtr;
 
@@ -209,7 +213,7 @@ usage: (klee_init_env) [options] [program arguments]\n\
                 save_all_writes_flag, fd_fail);
 
   #ifndef KLEE_REPLAY_INIT_ENV
-  klee_clear_memory_state();
+  klee_enable_memory_state();
   #endif
 }
 

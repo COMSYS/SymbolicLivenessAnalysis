@@ -34,6 +34,7 @@ private:
   bool globalAllocationsInCurrentStackFrame = false;
 
   bool disableMemoryState = false;
+  bool globalDisableMemoryState = false;
 
   struct outputFunction {
     bool entered = false;
@@ -92,6 +93,7 @@ private:
 
   void updateDisableMemoryState() {
     disableMemoryState = libraryFunction.entered || outputFunction.entered;
+    disableMemoryState &= !globalDisableMemoryState;
   }
 
 public:
@@ -103,6 +105,16 @@ public:
     : MemoryState(from) {
     executionState = state;
  }
+
+  void disable() {
+    globalDisableMemoryState = true;
+    updateDisableMemoryState();
+  }
+
+  void enable() {
+    globalDisableMemoryState = false;
+    updateDisableMemoryState();
+  }
 
   void clearEverything();
 
