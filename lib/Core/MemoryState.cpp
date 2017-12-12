@@ -27,11 +27,12 @@ namespace klee {
 KModule *MemoryState::listInitializedForKModule = nullptr;
 std::vector<llvm::Function *> MemoryState::outputFunctionsWhitelist;
 std::vector<llvm::Function *> MemoryState::inputFunctionsBlacklist;
+std::vector<llvm::Function *> MemoryState::libraryFunctionsList;
 
 void MemoryState::initializeLists(KModule *kmodule) {
   if (listInitializedForKModule != nullptr) return;
 
-  // whitelist
+  // whitelist: output functions
   const char* outputFunctions[] = {
     // stdio.h
     "fflush", "fputc", "putc", "fputwc", "putwc", "fputs", "fputws", "putchar",
@@ -43,7 +44,7 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "write"
   };
 
-  // blacklist
+  // blacklist: input functions
   const char* inputFunctions[] = {
     // stdio.h
     "fopen", "freopen", "fread", "fgetc", "getc", "fgetwc", "getwc", "fgets",
@@ -69,8 +70,14 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "fstat64", "lstat64", "open64", "readdir64", "stat64"
   };
 
+  // library functions
+  const char* libraryFunctions[] = {
+    "memset", "memcpy", "memmove"
+  };
+
   initializeFunctionList(kmodule, outputFunctions, outputFunctionsWhitelist);
   initializeFunctionList(kmodule, inputFunctions, inputFunctionsBlacklist);
+  initializeFunctionList(kmodule, libraryFunctions, libraryFunctionsList);
 
   listInitializedForKModule = kmodule;
 }
@@ -92,8 +99,13 @@ void MemoryState::initializeFunctionList(KModule *kmodule,
   list = std::move(tmp);
 }
 
-void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f) {
-  if (disableMemoryState) {
+
+
+void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
+                                       std::vector<ref<Expr>> &arguments) {
+  if (globalDisableMemoryState) {
+    // we do not need to check for library functions as we assume that those
+    // will not call any input or output functions
     return;
   }
 
@@ -117,6 +129,30 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f) {
                    << f->getName() << "()\n";
     }
     enterListedFunction(f);
+  } else if (std::binary_search(libraryFunctionsList.begin(),
+                                libraryFunctionsList.end(),
+                                f)) {
+    ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
+    ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
+
+    if (constAddr && constSize) {
+      ObjectPair op;
+      bool success;
+      success = executionState->addressSpace.resolveOne(constAddr, op);
+
+      if (success) {
+        const MemoryObject *mo = op.first;
+        const ObjectState *os = op.second;
+
+        std::uint64_t count = constSize->getZExtValue(64);
+        std::uint64_t addr = constAddr->getZExtValue(64);
+        std::uint64_t offset = addr - mo->address;
+
+        if (mo->size >= offset + count) {
+          enterLibraryFunction(f, constAddr, mo, os, count);
+        }
+      }
+    }
   }
 }
 

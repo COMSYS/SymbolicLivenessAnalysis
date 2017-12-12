@@ -1202,35 +1202,7 @@ void Executor::executeCall(ExecutionState &state,
                            std::vector< ref<Expr> > &arguments) {
 
   if (DetectInfiniteLoops) {
-    state.memoryState.registerFunctionCall(kmodule, f);
-
-    static Function *fmemset = kmodule->module->getFunction("memset");
-    static Function *fmemcpy = kmodule->module->getFunction("memcpy");
-    static Function *fmemmove = kmodule->module->getFunction("memmove");
-
-    if (fmemset == f || fmemcpy == f || fmemmove == f) {
-      ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
-      ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
-
-      if (constAddr && constSize) {
-        ObjectPair op;
-        bool success;
-        success = state.addressSpace.resolveOne(constAddr, op);
-
-        if (success) {
-          const MemoryObject *mo = op.first;
-          const ObjectState *os = op.second;
-
-          std::uint64_t count = constSize->getZExtValue(64);
-          std::uint64_t addr = constAddr->getZExtValue(64);
-          std::uint64_t offset = addr - mo->address;
-
-          if (mo->size >= offset + count) {
-            state.memoryState.enterLibraryFunction(f, constAddr, mo, os, count);
-          }
-        }
-      }
-    }
+    state.memoryState.registerFunctionCall(kmodule, f, arguments);
   }
 
   Instruction *i = ki->inst;

@@ -58,6 +58,7 @@ private:
   static KModule *listInitializedForKModule;
   static std::vector<llvm::Function *> outputFunctionsWhitelist;
   static std::vector<llvm::Function *> inputFunctionsBlacklist;
+  static std::vector<llvm::Function *> libraryFunctionsList;
 
   static void initializeLists(KModule *kmodule);
   template <std::size_t array_size>
@@ -168,7 +169,8 @@ public:
 
   bool findLoop();
 
-  void registerFunctionCall(KModule *kmodule, llvm::Function *f);
+  void registerFunctionCall(KModule *kmodule, llvm::Function *f,
+                            std::vector<ref<Expr>> &arguments);
 
   bool enterListedFunction(llvm::Function *f);
   void leaveListedFunction();
