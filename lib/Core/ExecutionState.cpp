@@ -37,6 +37,8 @@ namespace {
   DebugLogStateMerge("debug-log-state-merge");
 }
 
+size_t ExecutionState::next_id = 0;
+
 /***/
 
 StackFrame::StackFrame(KInstIterator _caller, KFunction *_kf)
@@ -64,6 +66,7 @@ StackFrame::~StackFrame() {
 /***/
 
 ExecutionState::ExecutionState(KFunction *kf) :
+    id(next_id++),
     pc(kf->instructions),
     prevPC(pc),
 
@@ -80,7 +83,7 @@ ExecutionState::ExecutionState(KFunction *kf) :
 }
 
 ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
-    : constraints(assumptions), queryCost(0.), ptreeNode(0),
+    : id(next_id++), constraints(assumptions), queryCost(0.), ptreeNode(0),
       memoryState(this) {}
 
 ExecutionState::~ExecutionState() {
@@ -97,6 +100,7 @@ ExecutionState::~ExecutionState() {
 }
 
 ExecutionState::ExecutionState(const ExecutionState& state):
+    id(next_id++),
     fnAliases(state.fnAliases),
     pc(state.pc),
     prevPC(state.prevPC),

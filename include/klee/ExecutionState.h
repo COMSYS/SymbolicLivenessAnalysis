@@ -65,7 +65,11 @@ struct StackFrame {
 
 /// @brief ExecutionState representing a path under exploration
 class ExecutionState {
+protected:
+  static size_t next_id;
 public:
+  const size_t id;
+
   typedef std::vector<StackFrame> stack_ty;
 
 private:
@@ -153,7 +157,8 @@ public:
   std::vector<ref<MergeHandler> > openMergeStack;
 
 private:
-  ExecutionState() : ptreeNode(0), memoryState(memoryState, this) {}
+  ExecutionState() : id(next_id++), ptreeNode(0),
+                     memoryState(memoryState, this) {}
 
 public:
   ExecutionState(KFunction *kf);
