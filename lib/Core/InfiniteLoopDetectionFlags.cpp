@@ -33,4 +33,11 @@ llvm::cl::opt<bool> InfiniteLoopLogStateJSON(
   llvm::cl::desc("Creates two files (states.json, states_fork.json) in output directory that record relevant information about states such as MemoryTrace length (default=false)"),
   llvm::cl::init(false));
 
+#ifdef HAVE_ZLIB_H
+llvm::cl::opt<bool> InfiniteLoopCompressLogStateJSON(
+  "infinite-loop-detection-compress-log-state-json-files",
+  llvm::cl::desc("Compress the files created by -infinite-loop-detection-log-state-json-files in gzip format."),
+  llvm::cl::init(false));
+#endif
+
 }

@@ -20,5 +20,9 @@ extern llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt;
 
 extern llvm::cl::opt<bool> InfiniteLoopLogStateJSON;
 
+#ifdef HAVE_ZLIB_H
+extern llvm::cl::opt<bool> InfiniteLoopCompressLogStateJSON;
+#endif
+
 }
 #endif

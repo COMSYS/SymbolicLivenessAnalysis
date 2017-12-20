@@ -398,19 +398,27 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
       interpreterHandler->getOutputFilename("states.json");
 
     std::string ErrorInfo;
-
+#ifdef HAVE_ZLIB_H
+    if (!InfiniteLoopCompressLogStateJSON) {
+#endif
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-    std::error_code ec;
-    statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ec,
-                                              llvm::sys::fs::OpenFlags::F_Text);
-    if (ec)
-      ErrorInfo = ec.message();
+      std::error_code ec;
+      statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ec,
+                             llvm::sys::fs::OpenFlags::F_Text);
+      if (ec)
+        ErrorInfo = ec.message();
 #elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-    statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo,
-                                            llvm::sys::fs::OpenFlags::F_Text);
+      statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(),
+                             ErrorInfo, llvm::sys::fs::OpenFlags::F_Text);
 #else
-    statesJSONFile =
-        new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo);
+      statesJSONFile =
+          new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo);
+#endif
+#ifdef HAVE_ZLIB_H
+    } else {
+      statesJSONFile = new compressed_fd_ostream(
+                             (states_file_name + ".gz").c_str(), ErrorInfo);
+    }
 #endif
     if (ErrorInfo != "") {
       klee_error("Could not open file %s : %s", states_file_name.c_str(),
@@ -422,19 +430,29 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
 
     ErrorInfo = "";
 
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-    std::error_code ec;
-    forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ec,
-                                            llvm::sys::fs::OpenFlags::F_Text);
-    if (ec)
-      ErrorInfo = ec.message();
-#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-    forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo,
-                                            llvm::sys::fs::OpenFlags::F_Text);
-#else
-    forkJSONFile =
-        new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo);
+#ifdef HAVE_ZLIB_H
+    if (!InfiniteLoopCompressLogStateJSON) {
 #endif
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+      std::error_code ec;
+      forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ec,
+                                              llvm::sys::fs::OpenFlags::F_Text);
+      if (ec)
+        ErrorInfo = ec.message();
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+      forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo,
+                                              llvm::sys::fs::OpenFlags::F_Text);
+#else
+      forkJSONFile =
+          new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo);
+#endif
+#ifdef HAVE_ZLIB_H
+    } else {
+      forkJSONFile = new compressed_fd_ostream(
+                           (fork_file_name + ".gz").c_str(), ErrorInfo);
+    }
+#endif
+
     if (ErrorInfo != "") {
       klee_error("Could not open file %s : %s", fork_file_name.c_str(),
                  ErrorInfo.c_str());
