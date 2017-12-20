@@ -240,9 +240,9 @@ public:
 
   void setInterpreter(Interpreter *i);
 
-  void processTestCase(const ExecutionState  &state,
-                       const char *errorMessage,
-                       const char *errorSuffix);
+  std::string processTestCase(const ExecutionState  &state,
+                              const char *errorMessage,
+                              const char *errorSuffix);
 
   std::string getOutputFilename(const std::string &filename);
   llvm::raw_fd_ostream *openOutputFile(const std::string &filename);
@@ -390,9 +390,11 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
-void KleeHandler::processTestCase(const ExecutionState &state,
-                                  const char *errorMessage,
-                                  const char *errorSuffix) {
+std::string KleeHandler::processTestCase(const ExecutionState &state,
+                                         const char *errorMessage,
+                                         const char *errorSuffix) {
+  std::string ktest_output_name = "";
+
   if (errorMessage && OptExitOnError) {
     m_interpreter->prepareForEarlyExit();
     klee_error("EXITING ON ERROR:\n%s\n", errorMessage);
@@ -431,6 +433,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         klee_warning("unable to write output test case, losing it");
       } else {
         ++m_numGeneratedTests;
+        ktest_output_name = getOutputFilename(getTestFilename("ktest", id));
       }
 
       for (unsigned i=0; i<b.numObjects; i++)
@@ -520,6 +523,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       delete f;
     }
   }
+
+  return ktest_output_name;
 }
 
   // load a .path file
