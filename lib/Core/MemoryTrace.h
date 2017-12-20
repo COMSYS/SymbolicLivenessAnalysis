@@ -65,6 +65,13 @@ public:
   MemoryTrace() = default;
   MemoryTrace(const MemoryTrace &) = default;
 
+  size_t getTraceLength() const {
+    return trace.size();
+  }
+  size_t getStackFramesLength() const {
+    return stackFrames.size();
+  }
+
   void registerBasicBlock(const KInstruction *instruction,
                           const fingerprint_t &fingerprint);
   void registerEndOfStackFrame(const KFunction *kf,

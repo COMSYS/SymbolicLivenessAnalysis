@@ -28,4 +28,9 @@ llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt(
   llvm::cl::desc("Disable infinite loop detection optimzation that only starts searching for loops on basic blocks with at least two predecessors (default=false)"),
   llvm::cl::init(false));
 
+llvm::cl::opt<bool> InfiniteLoopLogStateJSON(
+  "infinite-loop-detection-log-state-json-files",
+  llvm::cl::desc("Creates two files (states.json, states_fork.json) in output directory that record relevant information about states such as MemoryTrace length (default=false)"),
+  llvm::cl::init(false));
+
 }

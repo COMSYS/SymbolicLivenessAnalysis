@@ -130,6 +130,14 @@ public:
     updateDisableMemoryState();
   }
 
+  size_t getTraceLength() const {
+    return trace.getTraceLength();
+  }
+
+  size_t getStackFramesLength() const {
+    return trace.getStackFramesLength();
+  }
+
   void registerFunctionCall(KModule *kmodule, llvm::Function *f,
                             std::vector<ref<Expr>> &arguments);
   void registerFunctionRet(llvm::Function *f);

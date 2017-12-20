@@ -220,6 +220,12 @@ private:
   // measure time to error since start of Executor
   std::chrono::steady_clock::time_point executorStartTime;
 
+  /// JSON file to print state info to
+  llvm::raw_ostream *statesJSONFile;
+
+  /// JSON file to print state forking info to
+  llvm::raw_ostream *forkJSONFile;
+
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
   
@@ -229,6 +235,11 @@ private:
                      llvm::raw_ostream &file);
 
   void run(ExecutionState &initialState);
+
+  void updateStatesJSON(KInstruction *ki, const ExecutionState &state);
+  void updateForkJSON(const ExecutionState &current,
+                      const ExecutionState &trueState,
+                      const ExecutionState &falseState);
 
   // Given a concrete object in our [klee's] address space, add it to 
   // objects checked code can reference.

@@ -337,7 +337,8 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                             ? std::min(MaxCoreSolverTime, MaxInstructionTime)
                             : std::max(MaxCoreSolverTime, MaxInstructionTime)),
       debugInstFile(0), debugLogBuffer(debugBufferString),
-      executorStartTime(std::chrono::steady_clock::now()) {
+      executorStartTime(std::chrono::steady_clock::now()),
+      statesJSONFile(0), forkJSONFile(0) {
 
   if (coreSolverTimeout) UseForkedCoreSolver = true;
   Solver *coreSolver = klee::createCoreSolver(CoreSolverToUse);
@@ -391,6 +392,56 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                  ErrorInfo.c_str());
     }
   }
+
+  if (InfiniteLoopLogStateJSON) {
+    std::string states_file_name =
+      interpreterHandler->getOutputFilename("states.json");
+
+    std::string ErrorInfo;
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    std::error_code ec;
+    statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ec,
+                                              llvm::sys::fs::OpenFlags::F_Text);
+    if (ec)
+      ErrorInfo = ec.message();
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+    statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo,
+                                            llvm::sys::fs::OpenFlags::F_Text);
+#else
+    statesJSONFile =
+        new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo);
+#endif
+    if (ErrorInfo != "") {
+      klee_error("Could not open file %s : %s", states_file_name.c_str(),
+                 ErrorInfo.c_str());
+    }
+
+    std::string fork_file_name =
+      interpreterHandler->getOutputFilename("states_fork.json");
+
+    ErrorInfo = "";
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    std::error_code ec;
+    forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ec,
+                                            llvm::sys::fs::OpenFlags::F_Text);
+    if (ec)
+      ErrorInfo = ec.message();
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+    forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo,
+                                            llvm::sys::fs::OpenFlags::F_Text);
+#else
+    forkJSONFile =
+        new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo);
+#endif
+    if (ErrorInfo != "") {
+      klee_error("Could not open file %s : %s", fork_file_name.c_str(),
+                 ErrorInfo.c_str());
+    }
+
+  }
+
 }
 
 
@@ -433,7 +484,17 @@ Executor::~Executor() {
     delete timers.back();
     timers.pop_back();
   }
-  delete debugInstFile;
+  if (debugInstFile) {
+    delete debugInstFile;
+  }
+  if (statesJSONFile) {
+    (*statesJSONFile) << "\n]\n";
+    delete statesJSONFile;
+  }
+  if (forkJSONFile) {
+    (*forkJSONFile) << "\n]\n";
+    delete forkJSONFile;
+  }
 }
 
 /***/
@@ -692,6 +753,8 @@ void Executor::branch(ExecutionState &state,
         processTree->split(es->ptreeNode, ns, es);
       ns->ptreeNode = res.first;
       es->ptreeNode = res.second;
+
+      updateForkJSON(*es, *ns, *ns);
     }
   }
 
@@ -908,6 +971,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
 
     falseState = trueState->branch();
     addedStates.push_back(falseState);
+
+    updateForkJSON(current, *trueState, *falseState);
 
     if (it != seedMap.end()) {
       std::vector<SeedInfo> seeds = it->second;
@@ -2754,12 +2819,92 @@ void Executor::run(ExecutionState &initialState) {
     checkMemoryUsage();
 
     updateStates(&state);
+
+    updateStatesJSON(ki, state);
   }
 
   delete searcher;
   searcher = 0;
 
   doDumpStates();
+}
+
+void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state) {
+  static bool started = false;
+
+  if (statesJSONFile) {
+    auto time = std::chrono::steady_clock::now() - executorStartTime;
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time);
+    auto milliseconds =
+      std::chrono::duration_cast<std::chrono::milliseconds>(time) - seconds;
+
+    static size_t lastTraceLength = 0;
+    static size_t lastStackFrames = 0;
+    static size_t lastStateId = 0;
+
+    if (!started) {
+      (*statesJSONFile) << "[\n";
+    }
+    if (!started
+        || lastTraceLength != state.memoryState.getTraceLength()
+        || lastStackFrames != state.memoryState.getStackFramesLength()
+        || lastStateId != state.id
+    ) {
+      if (!started) {
+        (*statesJSONFile) << "  {\n";
+        started = true;
+      } else {
+        (*statesJSONFile) << ",\n  {\n";
+      }
+      (*statesJSONFile) << "    \"state_id\": " << state.id << ",\n";
+      (*statesJSONFile) << "    \"trace_length\": "
+                        << state.memoryState.getTraceLength() << ",\n";
+      (*statesJSONFile) << "    \"frame_count\": "
+                        << state.memoryState.getStackFramesLength() << ",\n";
+      (*statesJSONFile) << "    \"timestamp\": " << seconds.count()
+                        << "." << milliseconds.count() << ",\n";
+       (*statesJSONFile) << "    \"instructions\": " << stats::instructions
+                        << ",\n";
+      (*statesJSONFile) << "    \"instruction_id\": " << ki->info->id << "\n";
+      (*statesJSONFile) << "  }";
+
+      lastTraceLength = state.memoryState.getTraceLength();
+      lastStackFrames = state.memoryState.getStackFramesLength();
+      lastStateId = state.id;
+    }
+  }
+}
+
+void Executor::updateForkJSON(const ExecutionState &current,
+                              const ExecutionState &trueState,
+                              const ExecutionState &falseState) {
+  static bool started = false;
+
+  if (forkJSONFile) {
+    auto time = std::chrono::steady_clock::now() - executorStartTime;
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time);
+    auto milliseconds =
+      std::chrono::duration_cast<std::chrono::milliseconds>(time) - seconds;
+
+    if (!started) {
+      (*forkJSONFile) << "[\n";
+      (*forkJSONFile) << "  {\n";
+      started = true;
+    } else {
+      (*forkJSONFile) << ",\n  {\n";
+    }
+    (*forkJSONFile) << "    \"state_id\": " << current.id << ",\n";
+    if (trueState.id == falseState.id) {
+      (*forkJSONFile) << "    \"new_id\": " << trueState.id << ",\n";
+    } else {
+      (*forkJSONFile) << "    \"true_id\": " << trueState.id << ",\n";
+      (*forkJSONFile) << "    \"false_id\": " << falseState.id << ",\n";
+    }
+    (*forkJSONFile) << "    \"timestamp\": " << seconds.count()
+                    << "." << milliseconds.count() << ",\n";
+    (*forkJSONFile) << "    \"instructions\": " << stats::instructions << "\n";
+    (*forkJSONFile) << "  }";
+  }
 }
 
 std::string Executor::getAddressInfo(ExecutionState &state, 
@@ -3701,6 +3846,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   solver->setTimeout(coreSolverTimeout);
 
   ExecutionState tmp(state);
+  updateForkJSON(state, tmp, tmp);
 
   // Go through each byte in every test case and attempt to restrict
   // it to the constraints contained in cexPreferences.  (Note:

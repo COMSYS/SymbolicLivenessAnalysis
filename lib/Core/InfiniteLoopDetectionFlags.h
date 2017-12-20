@@ -18,5 +18,7 @@ extern llvm::cl::opt<bool> InfiniteLoopDetectionTruncateOnFork;
 
 extern llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt;
 
+extern llvm::cl::opt<bool> InfiniteLoopLogStateJSON;
+
 }
 #endif
