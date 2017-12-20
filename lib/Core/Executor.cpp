@@ -2815,12 +2815,11 @@ void Executor::run(ExecutionState &initialState) {
 
     executeInstruction(state, ki);
     processTimers(&state, MaxInstructionTime);
+    updateStatesJSON(ki, state);
 
     checkMemoryUsage();
 
     updateStates(&state);
-
-    updateStatesJSON(ki, state);
   }
 
   delete searcher;
@@ -2829,7 +2828,8 @@ void Executor::run(ExecutionState &initialState) {
   doDumpStates();
 }
 
-void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state) {
+void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state,
+                                std::string ktest, std::string error) {
   static bool started = false;
 
   if (statesJSONFile) {
@@ -2849,6 +2849,8 @@ void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state) {
         || lastTraceLength != state.memoryState.getTraceLength()
         || lastStackFrames != state.memoryState.getStackFramesLength()
         || lastStateId != state.id
+        || !ktest.empty()
+        || !error.empty()
     ) {
       if (!started) {
         (*statesJSONFile) << "  {\n";
@@ -2861,11 +2863,22 @@ void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state) {
                         << state.memoryState.getTraceLength() << ",\n";
       (*statesJSONFile) << "    \"frame_count\": "
                         << state.memoryState.getStackFramesLength() << ",\n";
+      if (!ktest.empty()) {
+        (*statesJSONFile) << "    \"ktest\": \"" << ktest << "\",\n";
+      }
+      if (!error.empty()) {
+        (*statesJSONFile) << "    \"error\": \"" << error << "\",\n";
+      }
       (*statesJSONFile) << "    \"timestamp\": " << seconds.count()
                         << "." << milliseconds.count() << ",\n";
-       (*statesJSONFile) << "    \"instructions\": " << stats::instructions
-                        << ",\n";
-      (*statesJSONFile) << "    \"instruction_id\": " << ki->info->id << "\n";
+      if (ki != nullptr) {
+        (*statesJSONFile) << "    \"instructions\": " << stats::instructions
+                          << ",\n";
+        (*statesJSONFile) << "    \"instruction_id\": " << ki->info->id << "\n";
+      } else {
+        (*statesJSONFile) << "    \"instructions\": " << stats::instructions
+                          << "\n";
+      }
       (*statesJSONFile) << "  }";
 
       lastTraceLength = state.memoryState.getTraceLength();
@@ -3009,17 +3022,23 @@ void Executor::terminateState(ExecutionState &state) {
 
 void Executor::terminateStateEarly(ExecutionState &state, 
                                    const Twine &message) {
+  std::string ktest = "";
   if (!OnlyOutputStatesCoveringNew || state.coveredNew ||
       (AlwaysOutputSeeds && seedMap.count(&state)))
-    interpreterHandler->processTestCase(state, (message + "\n").str().c_str(),
-                                        "early");
+    ktest = interpreterHandler->processTestCase(state,
+                                                (message + "\n").str().c_str(),
+                                                "early");
+  updateStatesJSON(nullptr, state, ktest, "early");
   terminateState(state);
 }
 
 void Executor::terminateStateOnExit(ExecutionState &state) {
+  std::string ktest = "";
   if (!OnlyOutputStatesCoveringNew || state.coveredNew || 
       (AlwaysOutputSeeds && seedMap.count(&state)))
-    interpreterHandler->processTestCase(state, 0, 0);
+    ktest = interpreterHandler->processTestCase(state, 0, 0);
+
+  updateStatesJSON(nullptr, state, ktest);
   terminateState(state);
 }
 
@@ -3088,6 +3107,7 @@ void Executor::terminateStateOnError(ExecutionState &state,
   static std::set< std::pair<Instruction*, std::string> > emittedErrors;
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
+  std::string ktest = "";
   
   if (EmitAllErrors ||
       emittedErrors.insert(std::make_pair(lastInst, message)).second) {
@@ -3131,9 +3151,12 @@ void Executor::terminateStateOnError(ExecutionState &state,
       suffix = suffix_buf.c_str();
     }
 
-    interpreterHandler->processTestCase(state, msg.str().c_str(), suffix);
+    ktest = interpreterHandler->processTestCase(state,
+                                                msg.str().c_str(),
+                                                suffix);
   }
-    
+
+  updateStatesJSON(nullptr, state, ktest, TerminateReasonNames[termReason]);
   terminateState(state);
 
   if (shouldExitOn(termReason))

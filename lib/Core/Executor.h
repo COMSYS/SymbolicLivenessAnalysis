@@ -236,7 +236,8 @@ private:
 
   void run(ExecutionState &initialState);
 
-  void updateStatesJSON(KInstruction *ki, const ExecutionState &state);
+  void updateStatesJSON(KInstruction *ki, const ExecutionState &state,
+                        std::string ktest = "", std::string error = "");
   void updateForkJSON(const ExecutionState &current,
                       const ExecutionState &trueState,
                       const ExecutionState &falseState);

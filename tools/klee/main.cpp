@@ -429,11 +429,12 @@ std::string KleeHandler::processTestCase(const ExecutionState &state,
         std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
       }
 
-      if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
+      std::string test_filename = getTestFilename("ktest", id);
+      if (!kTest_toFile(&b, getOutputFilename(test_filename).c_str())) {
         klee_warning("unable to write output test case, losing it");
       } else {
         ++m_numGeneratedTests;
-        ktest_output_name = getOutputFilename(getTestFilename("ktest", id));
+        ktest_output_name = test_filename;
       }
 
       for (unsigned i=0; i<b.numObjects; i++)
