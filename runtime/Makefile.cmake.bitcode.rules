@@ -43,6 +43,9 @@ else
 LLVMCC.Flags += -O0
 endif
 
+# disable vectorization
+LLVMCC.Flags += -fno-vectorize
+
 # Handle assertion flags
 ifeq ($(ASSERTIONS_ENABLED),0)
 LLVMCC.Flags += -DNDEBUG
