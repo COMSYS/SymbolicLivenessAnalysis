@@ -198,7 +198,7 @@ bool MemoryTrace::isAllocaAllocationInCurrentStackFrame(
   return (state.stack.size() - 1 == mo.getStackframeIndex());
 }
 
-MemoryTrace::fingerprint_t *MemoryTrace::findAllocaAllocationStackFrame(
+MemoryTrace::fingerprint_t *MemoryTrace::getPreviousAllocaDelta(
   const ExecutionState &state, const MemoryObject &mo) {
   assert(!isAllocaAllocationInCurrentStackFrame(state, mo));
 

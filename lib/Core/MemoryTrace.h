@@ -85,8 +85,8 @@ public:
 
   static bool isAllocaAllocationInCurrentStackFrame(const ExecutionState &state,
                                                     const MemoryObject &mo);
-  fingerprint_t *findAllocaAllocationStackFrame(const ExecutionState &state,
-                                                const MemoryObject &mo);
+  fingerprint_t *getPreviousAllocaDelta(const ExecutionState &state,
+                                        const MemoryObject &mo);
 
   void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const;
 };

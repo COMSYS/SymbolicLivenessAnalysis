@@ -213,7 +213,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
   if (mo.isLocal) {
     isLocal = true;
     if (!trace.isAllocaAllocationInCurrentStackFrame(*executionState, mo)) {
-      externalDelta = trace.findAllocaAllocationStackFrame(*executionState, mo);
+      externalDelta = trace.getPreviousAllocaDelta(*executionState, mo);
       if (externalDelta == nullptr) {
         // allocation was made in previous stack frame that is not available
         // anymore due to an external function call
