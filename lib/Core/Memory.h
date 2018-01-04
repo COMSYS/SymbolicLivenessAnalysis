@@ -38,6 +38,9 @@ private:
   static int counter;
   mutable unsigned refCount;
 
+  /// index of stack frame in which this memory object was allocated.
+  size_t stackframeIndex;
+
 public:
   unsigned id;
   uint64_t address;
@@ -74,6 +77,7 @@ public:
   explicit
   MemoryObject(uint64_t _address) 
     : refCount(0),
+      stackframeIndex(0),
       id(counter++), 
       address(_address),
       size(0),
@@ -85,8 +89,10 @@ public:
   MemoryObject(uint64_t _address, unsigned _size, 
                bool _isLocal, bool _isGlobal, bool _isFixed,
                const llvm::Value *_allocSite,
+               size_t _stackframeIndex,
                MemoryManager *_parent)
-    : refCount(0), 
+    : refCount(0),
+      stackframeIndex(_stackframeIndex),
       id(counter++),
       address(_address),
       size(_size),
@@ -140,6 +146,10 @@ public:
     } else {
       return ConstantExpr::alloc(0, Expr::Bool);
     }
+  }
+
+  size_t getStackframeIndex() const {
+    return stackframeIndex;
   }
 };
 
