@@ -192,54 +192,31 @@ bool MemoryTrace::findLoop() {
 }
 
 
-bool MemoryTrace::isAllocaAllocationInStackFrame(const StackFrame &sf,
-  const MemoryObject &mo)
-{
-  const std::vector<const MemoryObject *> &allocas = sf.allocas;
-  return std::find(allocas.begin(), allocas.end(), &mo) != allocas.end();
-}
-
 bool MemoryTrace::isAllocaAllocationInCurrentStackFrame(
   const ExecutionState &state, const MemoryObject &mo)
 {
-  const StackFrame &sf = state.stack.back();
-  return isAllocaAllocationInStackFrame(sf, mo);
+  return (state.stack.size() - 1 == mo.getStackframeIndex());
 }
 
 MemoryTrace::fingerprint_t *MemoryTrace::findAllocaAllocationStackFrame(
   const ExecutionState &state, const MemoryObject &mo) {
   assert(!isAllocaAllocationInCurrentStackFrame(state, mo));
 
-  const llvm::Value *allocSite = mo.allocSite;
-  const llvm::Instruction *allocInst = dyn_cast<llvm::Instruction>(allocSite);
-  if (allocInst) {
-    const llvm::Function *allocF = allocInst->getParent()->getParent();
+  size_t index = mo.getStackframeIndex();
 
-    for (auto it = stackFrames.rbegin(); it != stackFrames.rend(); ++it) {
-      StackFrameEntry &sfe = *it;
-      if (sfe.kf->function == allocF) {
-        // Compared to stackFrames, state.stack contains at least one more stack
-        // frame, i.e. the currently executed one (top most entry)
-        // Also, stackFrames only contains entries up to the last stack frame
-        // that contained an external function call
-        assert(stackFrames.size() + 1 <= state.stack.size());
-        size_t reversePos = std::distance(stackFrames.rbegin(), it) + 1;
+  // Compared to stackFrames, state.stack contains at least one more stack
+  // frame, i.e. the currently executed one (top most entry)
+  assert(stackFrames.size() + 1 <= state.stack.size());
 
-        size_t highestIndex = state.stack.size() - 1;
-        const StackFrame &sf = state.stack.at(highestIndex - reversePos);
-
-        if (isAllocaAllocationInStackFrame(sf, mo)) {
-          if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
-            llvm::errs() << "MemoryTrace: Alloca %" << allocSite->getName()
-                         << " was allocated in " << allocF->getName() << "()"
-                         << " (" << reversePos << " stack frames down)\n";
-          }
-          return &sfe.fingerprintAllocaDelta;
-        }
-      }
-    }
+  // smallest index that is present in MemoryTrace
+  size_t smallestIndex = state.stack.size() - (stackFrames.size() + 1);
+  if (index < smallestIndex) {
+    // MemoryTrace has been cleared since the time of allocation
+    return nullptr;
   }
-  return nullptr;
+
+  StackFrameEntry &sfe = stackFrames.at(index - smallestIndex);
+  return &sfe.fingerprintAllocaDelta;
 }
 
 void MemoryTrace::dumpTrace(llvm::raw_ostream &out) const {

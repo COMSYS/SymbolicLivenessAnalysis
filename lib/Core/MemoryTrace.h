@@ -83,8 +83,6 @@ public:
   void clear();
   std::size_t getNumberOfStackFrames();
 
-  static bool isAllocaAllocationInStackFrame(const StackFrame &sf,
-                                             const MemoryObject &mo);
   static bool isAllocaAllocationInCurrentStackFrame(const ExecutionState &state,
                                                     const MemoryObject &mo);
   fingerprint_t *findAllocaAllocationStackFrame(const ExecutionState &state,
