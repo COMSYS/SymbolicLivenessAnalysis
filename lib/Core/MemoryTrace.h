@@ -74,7 +74,8 @@ public:
                                fingerprint_t fingerprintLocalDelta,
                                fingerprint_t fingerprintAllocaDelta);
   StackFrameEntry popFrame();
-  bool findLoop();
+  bool findInfiniteLoopInFunction();
+  bool findInfiniteRecursion();
   void clear();
   std::size_t getNumberOfStackFrames();
 

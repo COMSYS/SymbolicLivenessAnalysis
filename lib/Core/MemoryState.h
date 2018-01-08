@@ -187,7 +187,8 @@ public:
   void registerBasicBlock(const llvm::BasicBlock *dst,
                           const llvm::BasicBlock *src);
 
-  bool findLoop();
+  bool findInfiniteLoopInFunction();
+  bool findInfiniteRecursion();
 
   void registerPushFrame(const KFunction *kf);
   void registerPopFrame(const llvm::BasicBlock *returningBB,

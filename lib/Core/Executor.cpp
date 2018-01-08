@@ -1466,9 +1466,8 @@ void Executor::executeCall(ExecutionState &state,
 
     if (DetectInfiniteLoops) {
       state.memoryState.registerEntryBasicBlock(state.pc->inst->getParent());
-      if (state.memoryState.findLoop()) {
-        terminateStateOnError(state, "infinite loop",
-                              InfiniteLoop);
+      if (state.memoryState.findInfiniteRecursion()) {
+        terminateStateOnError(state, "infinite loop", InfiniteLoop);
       }
     }
   }
@@ -1505,9 +1504,8 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
         InfiniteLoopDetectionDisableTwoPredecessorOpt) {
       // more than one predecessor
       state.memoryState.registerBasicBlock(dst, src);
-      if (state.memoryState.findLoop()) {
-        terminateStateOnError(state, "infinite loop",
-                              InfiniteLoop);
+      if (state.memoryState.findInfiniteLoopInFunction()) {
+        terminateStateOnError(state, "infinite loop", InfiniteLoop);
       }
     }
   }

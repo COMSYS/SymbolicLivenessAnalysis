@@ -110,7 +110,8 @@ MemoryTrace::StackFrameEntry MemoryTrace::popFrame() {
   return sfe;
 }
 
-bool MemoryTrace::findLoop() {
+
+bool MemoryTrace::findInfiniteLoopInFunction() {
   if (stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
     assert(stackFrames.back().index < trace.size() &&
@@ -127,7 +128,6 @@ bool MemoryTrace::findLoop() {
   // calculate number of entries within first stack frame
   std::size_t topStackFrameEntries = trace.size() - topStackFrameBoundary;
 
-  // Phase 1:
   // find matching entries within first stack frame
   if (topStackFrameEntries > 1) {
     MemoryTraceEntry &topEntry = trace.back();
@@ -136,17 +136,29 @@ bool MemoryTrace::findLoop() {
       // iterate over all elements within the first stack frame (but the first)
       if (topEntry == *it) {
         // found an entry with same PC and fingerprint
-
-        // TODO: remove?
         dumpTrace();
-
         return true;
       }
     }
   }
+  return false;
+}
 
-  // Phase 2:
-  // For all following stack frames, it suffices to find a match of the first
+bool MemoryTrace::findInfiniteRecursion() {
+  if (stackFrames.size() > 0) {
+    // current stack frame has always at least one basic block
+    assert(stackFrames.back().index < trace.size() &&
+      "current stack frame is empty");
+  }
+
+  auto stackFramesIt = stackFrames.rbegin();
+  std::size_t topStackFrameBoundary = 0;
+  if (stackFramesIt != stackFrames.rend()) {
+    // first index that belongs to current stack frame
+    topStackFrameBoundary = stackFramesIt->index;
+  }
+
+  // To find infinite recursion, it suffices to find a match of the first
   // entry within a stack frame.
   // This entry is called stack frame base and only contains changes to global
   // memory objects, alloca deltas of previous stack frames and the binding
@@ -160,15 +172,11 @@ bool MemoryTrace::findLoop() {
       MemoryTraceEntry &stackFrame = trace.at(it->index);
       if (topStackFrameBase == stackFrame) {
         // PC and iterator are the same at stack frame base
-
-        // TODO: remove?
         dumpTrace();
-
         return true;
       }
     }
   }
-
   return false;
 }
 

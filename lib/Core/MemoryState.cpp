@@ -632,14 +632,30 @@ void MemoryState::clearLocal(const llvm::Instruction *inst) {
   assert(getLocalValue(inst).isNull());
 }
 
-
-bool MemoryState::findLoop() {
+bool MemoryState::findInfiniteLoopInFunction() {
   if (disableMemoryState) {
     // we do not want to find infinite loops in library or output functions
     return false;
   }
 
-  bool result = trace.findLoop();
+  bool result = trace.findInfiniteLoopInFunction();
+
+  if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
+    if (result) {
+      trace.dumpTrace();
+    }
+  }
+
+  return result;
+}
+
+bool MemoryState::findInfiniteRecursion() {
+  if (disableMemoryState) {
+    // we do not want to find infinite loops in library or output functions
+    return false;
+  }
+
+  bool result = trace.findInfiniteRecursion();
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_TRACE)) {
     if (result) {
