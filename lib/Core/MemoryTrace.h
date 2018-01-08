@@ -42,19 +42,15 @@ public:
     fingerprint_t fingerprintLocalDelta;
     // allocas allocated in this stack frame
     fingerprint_t fingerprintAllocaDelta;
-    // did this stack frame contain any global allocation?
-    bool globalAllocation;
 
     StackFrameEntry(std::size_t index,
                     const KFunction *kf,
                     fingerprint_t fingerprintLocalDelta,
-                    fingerprint_t fingerprintAllocaDelta,
-                    bool globalAllocation)
+                    fingerprint_t fingerprintAllocaDelta)
         : index(index),
           kf(kf),
           fingerprintLocalDelta(fingerprintLocalDelta),
-          fingerprintAllocaDelta(fingerprintAllocaDelta),
-          globalAllocation(globalAllocation) {}
+          fingerprintAllocaDelta(fingerprintAllocaDelta) {}
   };
 
 private:
@@ -76,8 +72,7 @@ public:
                           const fingerprint_t &fingerprint);
   void registerEndOfStackFrame(const KFunction *kf,
                                fingerprint_t fingerprintLocalDelta,
-                               fingerprint_t fingerprintAllocaDelta,
-                               bool globalAllocation);
+                               fingerprint_t fingerprintAllocaDelta);
   StackFrameEntry popFrame();
   bool findLoop();
   void clear();

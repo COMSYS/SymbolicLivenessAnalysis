@@ -60,13 +60,10 @@ void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
 
 void MemoryTrace::registerEndOfStackFrame(const KFunction* kf,
                                           fingerprint_t fingerprintLocalDelta,
-                                          fingerprint_t fingerprintAllocaDelta,
-                                          bool globalAllocation) {
-  stackFrames.emplace_back(trace.size(),
-                           kf,
-                           fingerprintLocalDelta,
-                           fingerprintAllocaDelta,
-                           globalAllocation);
+                                          fingerprint_t fingerprintAllocaDelta)
+{
+  stackFrames.emplace_back(trace.size(), kf,
+                           fingerprintLocalDelta, fingerprintAllocaDelta);
 }
 
 void MemoryTrace::clear() {
@@ -152,29 +149,13 @@ bool MemoryTrace::findLoop() {
   // For all following stack frames, it suffices to find a match of the first
   // entry within a stack frame.
   // This entry is called stack frame base and only contains changes to global
-  // memory objects and the binding of arguments supplied to a function.
+  // memory objects, alloca deltas of previous stack frames and the binding
+  // of arguments supplied to a function.
   if (stackFrames.size() > 0) {
     MemoryTraceEntry &topStackFrameBase = trace.at(topStackFrameBoundary);
 
     for (auto it = stackFrames.rbegin() + 1; it != stackFrames.rend(); ++it) {
       // iterate over all stack frames (but the first)
-
-      if (it->globalAllocation) {
-        // Allocation addresses can differ between allocations which leads to
-        // different fingerprints for two otherwise equal iterations of an
-        // infinite loop containing an allocation.
-        // Global allocations influence every fingerprint obtained after the
-        // allocation took place. Thus, we cannot detect any infinite loop in
-        // this case.
-        // In contrast, local allocations (allocas) are not harmful, as these
-        // only influence every fingerprint within the same stack frame and are
-        // made after the stack frame base is registered. That is, they are not
-        // part of the fingerprints compared in the following.
-        klee_warning_once(trace[topStackFrameBoundary-1].inst,
-          "previous stack frame contains global allocation, "
-          "aborting search for infinite loops at this location");
-        return false;
-      }
 
       MemoryTraceEntry &stackFrame = trace.at(it->index);
       if (topStackFrameBase == stackFrame) {

@@ -31,7 +31,6 @@ private:
   MemoryFingerprint fingerprint;
   MemoryTrace trace;
   const ExecutionState *executionState = nullptr;
-  bool globalAllocationsInCurrentStackFrame = false;
 
   bool disableMemoryState = false;
   bool globalDisableMemoryState = false;

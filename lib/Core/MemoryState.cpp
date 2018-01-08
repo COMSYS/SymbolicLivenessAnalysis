@@ -222,9 +222,6 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     }
   }
 
-  if (!globalAllocationsInCurrentStackFrame && !isLocal)
-    globalAllocationsInCurrentStackFrame = true;
-
   // optimization for concrete offsets: only hash changed indices
   if (concreteOffset) {
     begin = concreteOffset->getZExtValue(64);
@@ -745,17 +742,13 @@ void MemoryState::registerPushFrame(const KFunction *kf) {
 
   trace.registerEndOfStackFrame(kf,
                                 fingerprint.getLocalDelta(),
-                                fingerprint.getAllocaDelta(),
-                                globalAllocationsInCurrentStackFrame);
+                                fingerprint.getAllocaDelta());
 
   // make locals and arguments "invisible"
   fingerprint.discardLocalDelta();
   // record alloca allocations and changes for this new stack frame separately
   // from those of other stack frames (without removing the latter)
   fingerprint.applyAndResetAllocaDelta();
-
-  // reset stack frame specific information
-  globalAllocationsInCurrentStackFrame = false;
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "Fingerprint: " << fingerprint.getFingerprintAsString()
@@ -797,14 +790,11 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
 
     updateBasicBlockInfo(callerBB);
 
-    globalAllocationsInCurrentStackFrame = sfe.globalAllocation;
-
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "reapplying local delta: "
                    << fingerprint.getLocalDeltaAsString()
                    << "\nreapplying alloca delta: "
                    << fingerprint.getAllocaDeltaAsString()
-                   << "\nGlobal Alloc: " << globalAllocationsInCurrentStackFrame
                    << "\nFingerprint: " << fingerprint.getFingerprintAsString()
                    << "\n";
     }
