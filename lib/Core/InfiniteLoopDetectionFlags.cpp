@@ -25,7 +25,7 @@ llvm::cl::opt<bool> InfiniteLoopDetectionTruncateOnFork(
 
 llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt(
   "infinite-loop-detection-disable-two-predecessor-optimization",
-  llvm::cl::desc("Disable infinite loop detection optimzation that only starts searching for loops on basic blocks with at least two predecessors (default=false)"),
+  llvm::cl::desc("Disable infinite loop detection optimization that only starts searching for loops on basic blocks with at least two predecessors (default=false)"),
   llvm::cl::init(false));
 
 llvm::cl::opt<bool> InfiniteLoopLogStateJSON(
