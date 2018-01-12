@@ -308,15 +308,17 @@ void MemoryState::registerLocal(const KInstruction *target, ref<Expr> value) {
   }
 
   llvm::Instruction *inst = target->inst;
-  if (inst->getParent() != basicBlockInfo.bb) {
-    updateBasicBlockInfo(inst->getParent());
-  }
-  llvm::Value *instValue = static_cast<llvm::Value *>(inst);
-  if (std::find(basicBlockInfo.liveRegisters.begin(),
-                basicBlockInfo.liveRegisters.end(),
-                instValue) == basicBlockInfo.liveRegisters.end())
-  {
-    return;
+  if (!InfiniteLoopDetectionDisableLiveVariableAnalysis) {
+    if (inst->getParent() != basicBlockInfo.bb) {
+      updateBasicBlockInfo(inst->getParent());
+    }
+    llvm::Value *instValue = static_cast<llvm::Value *>(inst);
+    if (std::find(basicBlockInfo.liveRegisters.begin(),
+                  basicBlockInfo.liveRegisters.end(),
+                  instValue) == basicBlockInfo.liveRegisters.end())
+    {
+      return;
+    }
   }
 
   registerLocal(inst, value);
@@ -485,6 +487,10 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
 
 void MemoryState::enterBasicBlock(const llvm::BasicBlock *dst,
                                   const llvm::BasicBlock *src) {
+  if (InfiniteLoopDetectionDisableLiveVariableAnalysis) {
+    return;
+  }
+
   unregisterConsumedLocals(src);
   updateBasicBlockInfo(dst);
   unregisterKilledLocals(dst, src);
@@ -510,9 +516,11 @@ void MemoryState::registerEntryBasicBlock(const llvm::BasicBlock *entry) {
                  << fingerprint.getFingerprintAsString() << "]\n";
   }
 
-  // entry basic blocks have no predecessor from which we would have to clean up
-  // using enterBasicBlock
-  updateBasicBlockInfo(entry);
+  if (!InfiniteLoopDetectionDisableLiveVariableAnalysis) {
+    // entry basic blocks have no predecessor from which we would have to clean up
+    // using enterBasicBlock
+    updateBasicBlockInfo(entry);
+  }
 
   const KInstruction *inst = getKInstruction(entry);
   trace.registerBasicBlock(inst, fingerprint.getFingerprint());
@@ -527,7 +535,9 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
                  << fingerprint.getFingerprintAsString() << "]\n";
   }
 
-  assert(dst == basicBlockInfo.bb && "basic block was not properly entered!");
+  if (!InfiniteLoopDetectionDisableLiveVariableAnalysis) {
+    assert(dst == basicBlockInfo.bb && "basic block was not properly entered!");
+  }
 
   const KInstruction *inst = getKInstruction(dst);
   trace.registerBasicBlock(inst, fingerprint.getFingerprint());
@@ -790,11 +800,13 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
   }
 
   if (trace.getNumberOfStackFrames() > 0) {
-    // Even though the local delta is removed in the next step, we have to clear
-    // consumed locals within KLEE to be able to determine which variable has
-    // already been registered during another call to the function we are
-    // currently leaving.
-    unregisterConsumedLocals(returningBB, false);
+    if (!InfiniteLoopDetectionDisableLiveVariableAnalysis) {
+      // Even though the local delta is removed in the next step, we have to
+      // clear consumed locals within KLEE to be able to determine which
+      // variable has already been registered during another call to the
+      // function we are currently leaving.
+      unregisterConsumedLocals(returningBB, false);
+    }
 
     MemoryTrace::StackFrameEntry sfe = trace.popFrame();
 
@@ -811,7 +823,9 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
     // be entered
     fingerprint.setAllocaDeltaToPreviousValue(sfe.fingerprintAllocaDelta);
 
-    updateBasicBlockInfo(callerBB);
+    if (!InfiniteLoopDetectionDisableLiveVariableAnalysis) {
+      updateBasicBlockInfo(callerBB);
+    }
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "reapplying local delta: "

@@ -270,7 +270,8 @@ void KModule::prepare(const Interpreter::ModuleOptions &opts,
   pm3.add(new PhiCleanerPass());
   pm3.add(operandTypeCheckPass);
   // analysis passes (should run last)
-  if (DetectInfiniteLoops) {
+  if (DetectInfiniteLoops && !InfiniteLoopDetectionDisableLiveVariableAnalysis)
+  {
     pm3.add(new LiveRegisterPass());
   }
   pm3.run(*module);
