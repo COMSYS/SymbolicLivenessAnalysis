@@ -90,10 +90,17 @@ void MemoryState::initializeFunctionList(KModule *kmodule,
   for (const char *name : functions) {
     llvm::Function *f = kmodule->module->getFunction(name);
     if (f == nullptr) {
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "MemoryState: could not find function in module: "
                      << name << "\n";
+      }
+    } else {
+      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+        llvm::errs() << "MemoryState: found function in module: "
+                     << name << "\n";
+      }
+      tmp.emplace_back(f);
     }
-    tmp.emplace_back(f);
   }
   std::sort(tmp.begin(), tmp.end());
   list = std::move(tmp);
