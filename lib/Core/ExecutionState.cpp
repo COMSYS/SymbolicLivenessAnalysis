@@ -124,8 +124,8 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     ptreeNode(state.ptreeNode),
     symbolics(state.symbolics),
     arrayNames(state.arrayNames),
-    openMergeStack(state.openMergeStack),
-    memoryState(state.memoryState, this)
+    memoryState(state.memoryState, this),
+    openMergeStack(state.openMergeStack)
 {
   for (unsigned int i=0; i<symbolics.size(); i++)
     symbolics[i].first->refCount++;
