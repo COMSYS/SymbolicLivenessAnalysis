@@ -394,70 +394,95 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
   }
 
   if (InfiniteLoopLogStateJSON) {
-    std::string states_file_name =
-      interpreterHandler->getOutputFilename("states.json");
 
-    std::string ErrorInfo;
+    size_t stateLoggingOverhead = util::GetTotalMallocUsage();
+
+    {
+      std::string states_file_name =
+        interpreterHandler->getOutputFilename("states.json");
+
+      std::string ErrorInfo;
 #ifdef HAVE_ZLIB_H
-    if (!InfiniteLoopCompressLogStateJSON) {
+      if (!InfiniteLoopCompressLogStateJSON) {
 #endif
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-      std::error_code ec;
-      statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ec,
-                             llvm::sys::fs::OpenFlags::F_Text);
-      if (ec)
-        ErrorInfo = ec.message();
+        std::error_code ec;
+        statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(), ec,
+                               llvm::sys::fs::OpenFlags::F_Text);
+        if (ec)
+          ErrorInfo = ec.message();
 #elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-      statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(),
-                             ErrorInfo, llvm::sys::fs::OpenFlags::F_Text);
+        statesJSONFile = new llvm::raw_fd_ostream(states_file_name.c_str(),
+                               ErrorInfo, llvm::sys::fs::OpenFlags::F_Text);
 #else
-      statesJSONFile =
-          new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo);
+        statesJSONFile =
+            new llvm::raw_fd_ostream(states_file_name.c_str(), ErrorInfo);
 #endif
 #ifdef HAVE_ZLIB_H
-    } else {
-      statesJSONFile = new compressed_fd_ostream(
-                             (states_file_name + ".gz").c_str(), ErrorInfo);
-    }
+      } else {
+        statesJSONFile = new compressed_fd_ostream(
+                               (states_file_name + ".gz").c_str(), ErrorInfo);
+      }
 #endif
-    if (ErrorInfo != "") {
-      klee_error("Could not open file %s : %s", states_file_name.c_str(),
-                 ErrorInfo.c_str());
-    }
+      if (ErrorInfo != "") {
+        klee_error("Could not open file %s : %s", states_file_name.c_str(),
+                   ErrorInfo.c_str());
+      }
 
-    std::string fork_file_name =
-      interpreterHandler->getOutputFilename("states_fork.json");
+      if (statesJSONFile) {
+        (*statesJSONFile) << "[\n";
+        (*statesJSONFile) << "  {\n";
+        (*statesJSONFile) << "    \"functionpointer_size\": "
+                          << sizeof(llvm::Function *) << ",\n";
+        (*statesJSONFile) << "    \"trace_entry_size\": "
+                          << MemoryState::getTraceStructSizes().first << ",\n";
+        (*statesJSONFile) << "    \"frames_entry_size\": "
+                          << MemoryState::getTraceStructSizes().second << ",\n";
+        (*statesJSONFile) << "    \"memory_state_size\": "
+                          << sizeof(MemoryState) << ",\n";
+      }
 
-    ErrorInfo = "";
+      std::string fork_file_name =
+        interpreterHandler->getOutputFilename("states_fork.json");
+
+      ErrorInfo = "";
 
 #ifdef HAVE_ZLIB_H
-    if (!InfiniteLoopCompressLogStateJSON) {
+      if (!InfiniteLoopCompressLogStateJSON) {
 #endif
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-      std::error_code ec;
-      forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ec,
+        std::error_code ec;
+        forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ec,
                                               llvm::sys::fs::OpenFlags::F_Text);
-      if (ec)
-        ErrorInfo = ec.message();
+        if (ec)
+          ErrorInfo = ec.message();
 #elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-      forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo,
-                                              llvm::sys::fs::OpenFlags::F_Text);
+        forkJSONFile = new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo,
+                                                  llvm::sys::fs::OpenFlags::F_Text);
 #else
-      forkJSONFile =
-          new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo);
+        forkJSONFile =
+            new llvm::raw_fd_ostream(fork_file_name.c_str(), ErrorInfo);
 #endif
 #ifdef HAVE_ZLIB_H
-    } else {
-      forkJSONFile = new compressed_fd_ostream(
-                           (fork_file_name + ".gz").c_str(), ErrorInfo);
-    }
+      } else {
+        forkJSONFile = new compressed_fd_ostream(
+                             (fork_file_name + ".gz").c_str(), ErrorInfo);
+      }
 #endif
 
-    if (ErrorInfo != "") {
-      klee_error("Could not open file %s : %s", fork_file_name.c_str(),
-                 ErrorInfo.c_str());
+      if (ErrorInfo != "") {
+        klee_error("Could not open file %s : %s", fork_file_name.c_str(),
+                   ErrorInfo.c_str());
+      }
+
     }
 
+    stateLoggingOverhead = util::GetTotalMallocUsage() - stateLoggingOverhead;
+
+    if (statesJSONFile) {
+      (*statesJSONFile) << "    \"logging_overhead\": "
+                        << stateLoggingOverhead << ",\n";
+    }
   }
 
 }
@@ -2896,6 +2921,8 @@ void Executor::run(ExecutionState &initialState) {
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
+  bool firstInstruction = true;
+
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
@@ -2903,11 +2930,19 @@ void Executor::run(ExecutionState &initialState) {
 
     executeInstruction(state, ki);
     processTimers(&state, MaxInstructionTime);
+    if (firstInstruction && statesJSONFile) {
+      (*statesJSONFile) << "    \"functionlists_length\": "
+                        << state.memoryState.getFunctionListsLength() << ",\n";
+      (*statesJSONFile) << "    \"functionlists_capacity\": "
+                        << state.memoryState.getFunctionListsCapacity() << "\n";
+      (*statesJSONFile) << "  }";
+    }
     updateStatesJSON(ki, state);
 
     checkMemoryUsage();
 
     updateStates(&state);
+    firstInstruction = false;
   }
 
   delete searcher;
@@ -2918,8 +2953,6 @@ void Executor::run(ExecutionState &initialState) {
 
 void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state,
                                 std::string ktest, std::string error) {
-  static bool started = false;
-
   if (statesJSONFile) {
     auto time = std::chrono::steady_clock::now() - executorStartTime;
     auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time);
@@ -2930,33 +2963,30 @@ void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state,
     static size_t lastStackFrames = 0;
     static size_t lastStateId = 0;
 
-    if (!started) {
-      (*statesJSONFile) << "[\n";
-    }
-    if (!started
-        || lastTraceLength != state.memoryState.getTraceLength()
-        || lastStackFrames != state.memoryState.getStackFramesLength()
-        || lastStateId != state.id
+    if (lastStateId != state.id
+        || lastTraceLength != state.memoryState.getTraceLength().first
+        || lastStackFrames != state.memoryState.getTraceLength().second
         || !ktest.empty()
         || !error.empty()
     ) {
-      if (!started) {
-        (*statesJSONFile) << "  {\n";
-        started = true;
-      } else {
-        (*statesJSONFile) << ",\n  {\n";
-      }
+      (*statesJSONFile) << ",\n  {\n";
       (*statesJSONFile) << "    \"state_id\": " << state.id << ",\n";
       (*statesJSONFile) << "    \"trace_length\": "
-                        << state.memoryState.getTraceLength() << ",\n";
-      (*statesJSONFile) << "    \"frame_count\": "
-                        << state.memoryState.getStackFramesLength() << ",\n";
+                        << state.memoryState.getTraceLength().first << ",\n";
+      (*statesJSONFile) << "    \"frames_length\": "
+                        << state.memoryState.getTraceLength().second << ",\n";
+      (*statesJSONFile) << "    \"trace_capacity\": "
+                        << state.memoryState.getTraceCapacity().first << ",\n";
+      (*statesJSONFile) << "    \"frames_capacity\": "
+                        << state.memoryState.getTraceCapacity().second << ",\n";
       if (!ktest.empty()) {
         (*statesJSONFile) << "    \"ktest\": \"" << ktest << "\",\n";
       }
       if (!error.empty()) {
         (*statesJSONFile) << "    \"error\": \"" << error << "\",\n";
       }
+      (*statesJSONFile) << "    \"heap\": " << util::GetTotalMallocUsage()
+                        << ",\n";
       (*statesJSONFile) << "    \"timestamp\": " << seconds.count()
                         << "." << milliseconds.count() << ",\n";
       if (ki != nullptr) {
@@ -2969,8 +2999,8 @@ void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state,
       }
       (*statesJSONFile) << "  }";
 
-      lastTraceLength = state.memoryState.getTraceLength();
-      lastStackFrames = state.memoryState.getStackFramesLength();
+      lastTraceLength = state.memoryState.getTraceLength().first;
+      lastStackFrames = state.memoryState.getTraceLength().second;
       lastStateId = state.id;
     }
   }

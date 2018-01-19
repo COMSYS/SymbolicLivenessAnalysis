@@ -63,11 +63,16 @@ public:
   MemoryTrace() = default;
   MemoryTrace(const MemoryTrace &) = default;
 
-  size_t getTraceLength() const {
-    return trace.size();
+  std::pair<size_t, size_t> getTraceLength() const {
+    return std::make_pair(trace.size(), stackFrames.size());
   }
-  size_t getStackFramesLength() const {
-    return stackFrames.size();
+
+  std::pair<size_t, size_t> getTraceCapacity() const {
+    return std::make_pair(trace.capacity(), stackFrames.capacity());
+  }
+
+  static std::pair<size_t, size_t> getTraceStructSizes() {
+    return std::make_pair(sizeof(MemoryTraceEntry), sizeof(StackFrameEntry));
   }
 
   void registerBasicBlock(const KInstruction *instruction,

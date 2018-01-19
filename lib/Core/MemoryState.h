@@ -129,13 +129,30 @@ public:
     updateDisableMemoryState();
   }
 
-  size_t getTraceLength() const {
+  static std::pair<size_t, size_t> getTraceStructSizes() {
+    return MemoryTrace::getTraceStructSizes();
+  }
+
+  std::pair<size_t, size_t> getTraceLength() const {
     return trace.getTraceLength();
   }
 
-  size_t getStackFramesLength() const {
-    return trace.getStackFramesLength();
+  std::pair<size_t, size_t> getTraceCapacity() const {
+    return trace.getTraceCapacity();
   }
+
+  size_t getFunctionListsLength() const {
+    return MemoryState::outputFunctionsWhitelist.size()
+        + MemoryState::inputFunctionsBlacklist.size()
+        + MemoryState::libraryFunctionsList.size();
+  }
+
+  size_t getFunctionListsCapacity() const {
+    return MemoryState::outputFunctionsWhitelist.capacity()
+        + MemoryState::inputFunctionsBlacklist.capacity()
+        + MemoryState::libraryFunctionsList.capacity();
+  }
+
 
   void registerFunctionCall(KModule *kmodule, llvm::Function *f,
                             std::vector<ref<Expr>> &arguments);
