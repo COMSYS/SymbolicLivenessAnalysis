@@ -1,6 +1,7 @@
+#include "MemoryTrace.h"
+
 #include "InfiniteLoopDetectionFlags.h"
 #include "MemoryFingerprint.h"
-#include "MemoryTrace.h"
 
 #include "klee/ExecutionState.h"
 #include "klee/Internal/Module/InstructionInfoTable.h"

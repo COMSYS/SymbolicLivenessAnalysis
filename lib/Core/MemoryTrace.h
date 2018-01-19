@@ -1,6 +1,8 @@
 #ifndef KLEE_MEMORYTRACE_H
 #define KLEE_MEMORYTRACE_H
 
+#include "MemoryFingerprint.h"
+
 #include "klee/Internal/Module/KInstruction.h"
 
 #include <vector>

@@ -1,7 +1,8 @@
+#include "MemoryState.h"
+
 #include "AddressSpace.h"
 #include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
-#include "MemoryState.h"
 
 #include "klee/ExecutionState.h"
 #include "klee/Internal/Module/Cell.h"
