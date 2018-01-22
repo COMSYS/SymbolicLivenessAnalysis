@@ -74,7 +74,7 @@ void MemoryState::initializeLists(KModule *kmodule) {
   // library functions with signature (*dest, _, count) that modify the memory
   // starting from dest for count bytes
   const char* memoryFunctions[] = {
-    "memset", "memcpy", "memmove"
+    "memset", "memcpy", "memmove", "wmemset", "wmemcpy", "wmemmove"
   };
 
   initializeFunctionList(kmodule, outputFunctions, outputFunctionsWhitelist);
