@@ -105,8 +105,15 @@ private:
   }
 
   void updateDisableMemoryState() {
-    disableMemoryState = libraryFunction.entered || listedFunction.entered;
-    disableMemoryState &= !globalDisableMemoryState;
+    disableMemoryState = libraryFunction.entered || listedFunction.entered || globalDisableMemoryState;
+
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: updating disableMemoryState: "
+                   << "(libraryFunction: " << libraryFunction.entered << " || "
+                   << "listedFunction: " << listedFunction.entered << " || "
+                   << "globalDisable: " << globalDisableMemoryState << ") "
+                   << "= " << disableMemoryState << "\n";
+    }
   }
 
 public:

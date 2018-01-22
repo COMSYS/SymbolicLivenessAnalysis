@@ -71,7 +71,8 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "fstat64", "lstat64", "open64", "readdir64", "stat64"
   };
 
-  // library functions
+  // library functions with signature (*dest, _, count) that modifies the memory
+  // starting from dest for count bytes
   const char* libraryFunctions[] = {
     "memset", "memcpy", "memmove"
   };
@@ -112,8 +113,8 @@ void MemoryState::initializeFunctionList(KModule *kmodule,
 void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
                                        std::vector<ref<Expr>> &arguments) {
   if (globalDisableMemoryState) {
-    // we do not need to check for library functions as we assume that those
-    // will not call any input or output functions
+    // we only check for global disable and not for library or listed functions
+    // as we assume that those will not call any input or output functions
     return;
   }
 
@@ -492,6 +493,10 @@ void MemoryState::enterBasicBlock(const llvm::BasicBlock *dst,
     return;
   }
 
+  if (disableMemoryState) {
+    return;
+  }
+
   unregisterConsumedLocals(src);
   updateBasicBlockInfo(dst);
   unregisterKilledLocals(dst, src);
@@ -511,6 +516,10 @@ void MemoryState::enterBasicBlock(const llvm::BasicBlock *dst,
 }
 
 void MemoryState::registerEntryBasicBlock(const llvm::BasicBlock *entry) {
+  if (disableMemoryState) {
+    return;
+  }
+
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: entry BASICBLOCK" << entry->getName()
                  << " [fingerprint: "
@@ -529,6 +538,10 @@ void MemoryState::registerEntryBasicBlock(const llvm::BasicBlock *entry) {
 
 void MemoryState::registerBasicBlock(const llvm::BasicBlock *dst,
                                      const llvm::BasicBlock *src) {
+  if (disableMemoryState) {
+    return;
+  }
+
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: BASICBLOCK " << dst->getName()
                  << " (coming from " << src->getName() << ")"
