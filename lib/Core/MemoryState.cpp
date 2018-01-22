@@ -28,6 +28,7 @@ namespace klee {
 KModule *MemoryState::listInitializedForKModule = nullptr;
 std::vector<llvm::Function *> MemoryState::outputFunctionsWhitelist;
 std::vector<llvm::Function *> MemoryState::inputFunctionsBlacklist;
+std::vector<llvm::Function *> MemoryState::libraryFunctionsList;
 std::vector<llvm::Function *> MemoryState::memoryFunctionsList;
 
 void MemoryState::initializeLists(KModule *kmodule) {
@@ -71,6 +72,25 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "fstat64", "lstat64", "open64", "readdir64", "stat64"
   };
 
+  // library function that might use heavy loops that we do not want to inspect
+  const char* libraryFunctions[] = {
+    // string.h
+    "memcmp", "memchr", "strcpy", "strncpy", "strcat", "strncat", "strxfrm",
+    "strlen", "strcmp", "strncmp", "strcoll", "strchr", "strrchr", "strspn",
+    "strcspn", "strpbrk", "strstr",
+
+    // wchar.h
+    "wmemcmp", "wmemchr", "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcsxfrm",
+    "wcslen", "wcscmp", "wcsncmp", "wcscoll", "wcschr", "wcsrchr", "wcsspn",
+    "wcscspn", "wcspbrk", "wcsstr",
+
+    // GNU
+    "mempcpy",
+
+    // POSIX
+    "strdup", "strcasecmp", "memccpy", "bzero"
+  };
+
   // library functions with signature (*dest, _, count) that modify the memory
   // starting from dest for count bytes
   const char* memoryFunctions[] = {
@@ -79,6 +99,7 @@ void MemoryState::initializeLists(KModule *kmodule) {
 
   initializeFunctionList(kmodule, outputFunctions, outputFunctionsWhitelist);
   initializeFunctionList(kmodule, inputFunctions, inputFunctionsBlacklist);
+  initializeFunctionList(kmodule, libraryFunctions, libraryFunctionsList);
   initializeFunctionList(kmodule, memoryFunctions, memoryFunctionsList);
 
   listInitializedForKModule = kmodule;
@@ -139,6 +160,14 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
                    << f->getName() << "()\n";
     }
     enterListedFunction(f);
+  } else if (std::binary_search(libraryFunctionsList.begin(),
+                                libraryFunctionsList.end(),
+                                f)) {
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: library function call to "
+                   << f->getName() << "()\n";
+    }
+    enterLibraryFunction(f);
   } else if (std::binary_search(memoryFunctionsList.begin(),
                                 memoryFunctionsList.end(),
                                 f)) {
@@ -169,6 +198,8 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
 void MemoryState::registerFunctionRet(llvm::Function *f) {
   if (isInListedFunction(f)) {
     leaveListedFunction();
+  } else if (isInLibraryFunction(f)) {
+    leaveLibraryFunction();
   } else if (isInMemoryFunction(f)) {
     leaveMemoryFunction();
   }
@@ -197,7 +228,9 @@ void MemoryState::registerExternalFunctionCall() {
 
 void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                                 const ObjectState &os, std::size_t bytes) {
-  if (disableMemoryState) {
+  if (disableMemoryState && !libraryFunction.entered) {
+    // in case of library functions, we need to record changes to global memory
+    // and previous allocas
     return;
   }
 
@@ -228,6 +261,13 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
         // anymore due to an external function call
         isLocal = false;
       }
+    }
+  }
+
+  if (libraryFunction.entered) {
+    if (isLocal && externalDelta == nullptr) {
+      // change is only to be made to allocaDelta of current stack frame
+      return;
     }
   }
 
@@ -706,7 +746,7 @@ bool MemoryState::enterListedFunction(llvm::Function *f) {
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering output function: "
+    llvm::errs() << "MemoryState: entering listed function: "
                  << f->getName() << "\n";
   }
 
@@ -732,6 +772,40 @@ void MemoryState::leaveListedFunction() {
 
 bool MemoryState::isInListedFunction(llvm::Function *f) {
   return (listedFunction.entered && f == listedFunction.function);
+}
+
+bool MemoryState::enterLibraryFunction(llvm::Function *f) {
+  if (libraryFunction.entered) {
+    return false;
+  }
+
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+    llvm::errs() << "MemoryState: entering library function: "
+                 << f->getName() << "\n";
+  }
+
+  libraryFunction.entered = true;
+  libraryFunction.function = f;
+
+  updateDisableMemoryState();
+
+  return true;
+}
+
+void MemoryState::leaveLibraryFunction() {
+  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+    llvm::errs() << "MemoryState: leaving library function: "
+                 << libraryFunction.function->getName() << "\n";
+  }
+
+  libraryFunction.entered = false;
+  libraryFunction.function = nullptr;
+
+  updateDisableMemoryState();
+}
+
+bool MemoryState::isInLibraryFunction(llvm::Function *f) {
+  return (libraryFunction.entered && f == libraryFunction.function);
 }
 
 bool MemoryState::enterMemoryFunction(llvm::Function *f,

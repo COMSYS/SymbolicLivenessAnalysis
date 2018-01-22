@@ -40,6 +40,11 @@ private:
     llvm::Function *function = nullptr;
   } listedFunction;
 
+  struct libraryFunction {
+    bool entered = false;
+    llvm::Function *function = nullptr;
+  } libraryFunction;
+
   struct memoryFunction {
     bool entered = false;
     llvm::Function *function = nullptr;
@@ -57,6 +62,7 @@ private:
   static KModule *listInitializedForKModule;
   static std::vector<llvm::Function *> outputFunctionsWhitelist;
   static std::vector<llvm::Function *> inputFunctionsBlacklist;
+  static std::vector<llvm::Function *> libraryFunctionsList;
   static std::vector<llvm::Function *> memoryFunctionsList;
 
   static void initializeLists(KModule *kmodule);
@@ -70,6 +76,10 @@ private:
   bool enterListedFunction(llvm::Function *f);
   void leaveListedFunction();
   bool isInListedFunction(llvm::Function *f);
+
+  bool enterLibraryFunction(llvm::Function *f);
+  void leaveLibraryFunction();
+  bool isInLibraryFunction(llvm::Function *f);
 
   bool enterMemoryFunction(llvm::Function *f, ref<ConstantExpr> address,
     const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
@@ -105,12 +115,13 @@ private:
   }
 
   void updateDisableMemoryState() {
-    disableMemoryState = memoryFunction.entered || listedFunction.entered || globalDisableMemoryState;
+    disableMemoryState = listedFunction.entered || libraryFunction.entered || memoryFunction.entered || globalDisableMemoryState;
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: updating disableMemoryState: "
-                   << "(memoryFunction: " << memoryFunction.entered << " || "
-                   << "listedFunction: " << listedFunction.entered << " || "
+                   << "(listedFunction: " << listedFunction.entered << " || "
+                   << "libraryFunction: " << libraryFunction.entered << " || "
+                   << "memoryFunction: " << memoryFunction.entered << " || "
                    << "globalDisable: " << globalDisableMemoryState << ") "
                    << "= " << disableMemoryState << "\n";
     }
@@ -151,12 +162,14 @@ public:
   size_t getFunctionListsLength() const {
     return MemoryState::outputFunctionsWhitelist.size()
         + MemoryState::inputFunctionsBlacklist.size()
+        + MemoryState::libraryFunctionsList.size()
         + MemoryState::memoryFunctionsList.size();
   }
 
   size_t getFunctionListsCapacity() const {
     return MemoryState::outputFunctionsWhitelist.capacity()
         + MemoryState::inputFunctionsBlacklist.capacity()
+        + MemoryState::libraryFunctionsList.capacity()
         + MemoryState::memoryFunctionsList.capacity();
   }
 
