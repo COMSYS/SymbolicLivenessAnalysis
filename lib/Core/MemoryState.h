@@ -40,13 +40,13 @@ private:
     llvm::Function *function = nullptr;
   } listedFunction;
 
-  struct libraryFunction {
+  struct memoryFunction {
     bool entered = false;
     llvm::Function *function = nullptr;
     ref<ConstantExpr> address;
     const MemoryObject *mo = nullptr;
     std::size_t bytes = 0;
-  } libraryFunction;
+  } memoryFunction;
 
   struct basicBlockInfo {
     const llvm::BasicBlock *bb = nullptr;
@@ -57,7 +57,7 @@ private:
   static KModule *listInitializedForKModule;
   static std::vector<llvm::Function *> outputFunctionsWhitelist;
   static std::vector<llvm::Function *> inputFunctionsBlacklist;
-  static std::vector<llvm::Function *> libraryFunctionsList;
+  static std::vector<llvm::Function *> memoryFunctionsList;
 
   static void initializeLists(KModule *kmodule);
   template <std::size_t array_size>
@@ -71,10 +71,10 @@ private:
   void leaveListedFunction();
   bool isInListedFunction(llvm::Function *f);
 
-  bool enterLibraryFunction(llvm::Function *f, ref<ConstantExpr> address,
+  bool enterMemoryFunction(llvm::Function *f, ref<ConstantExpr> address,
     const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
-  bool isInLibraryFunction(llvm::Function *f);
-  void leaveLibraryFunction();
+  bool isInMemoryFunction(llvm::Function *f);
+  void leaveMemoryFunction();
 
   void updateBasicBlockInfo(const llvm::BasicBlock *bb);
   KInstruction *getKInstruction(const llvm::BasicBlock* bb);
@@ -105,11 +105,11 @@ private:
   }
 
   void updateDisableMemoryState() {
-    disableMemoryState = libraryFunction.entered || listedFunction.entered || globalDisableMemoryState;
+    disableMemoryState = memoryFunction.entered || listedFunction.entered || globalDisableMemoryState;
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: updating disableMemoryState: "
-                   << "(libraryFunction: " << libraryFunction.entered << " || "
+                   << "(memoryFunction: " << memoryFunction.entered << " || "
                    << "listedFunction: " << listedFunction.entered << " || "
                    << "globalDisable: " << globalDisableMemoryState << ") "
                    << "= " << disableMemoryState << "\n";
@@ -151,13 +151,13 @@ public:
   size_t getFunctionListsLength() const {
     return MemoryState::outputFunctionsWhitelist.size()
         + MemoryState::inputFunctionsBlacklist.size()
-        + MemoryState::libraryFunctionsList.size();
+        + MemoryState::memoryFunctionsList.size();
   }
 
   size_t getFunctionListsCapacity() const {
     return MemoryState::outputFunctionsWhitelist.capacity()
         + MemoryState::inputFunctionsBlacklist.capacity()
-        + MemoryState::libraryFunctionsList.capacity();
+        + MemoryState::memoryFunctionsList.capacity();
   }
 
 
@@ -175,7 +175,7 @@ public:
   }
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                        const ObjectState &os, std::size_t bytes) {
-    if (libraryFunction.entered || listedFunction.entered) {
+    if (disableMemoryState) {
       return;
     }
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
@@ -190,7 +190,7 @@ public:
 
   void registerLocal(const KInstruction *target, ref<Expr> value);
   void unregisterLocal(const KInstruction *target, ref<Expr> value) {
-    if (!libraryFunction.entered && !listedFunction.entered
+    if (!disableMemoryState
       && DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "MemoryState: UNREGISTER LOCAL (KInst)\n";

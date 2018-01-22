@@ -28,7 +28,7 @@ namespace klee {
 KModule *MemoryState::listInitializedForKModule = nullptr;
 std::vector<llvm::Function *> MemoryState::outputFunctionsWhitelist;
 std::vector<llvm::Function *> MemoryState::inputFunctionsBlacklist;
-std::vector<llvm::Function *> MemoryState::libraryFunctionsList;
+std::vector<llvm::Function *> MemoryState::memoryFunctionsList;
 
 void MemoryState::initializeLists(KModule *kmodule) {
   if (listInitializedForKModule != nullptr) return;
@@ -71,15 +71,15 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "fstat64", "lstat64", "open64", "readdir64", "stat64"
   };
 
-  // library functions with signature (*dest, _, count) that modifies the memory
+  // library functions with signature (*dest, _, count) that modify the memory
   // starting from dest for count bytes
-  const char* libraryFunctions[] = {
+  const char* memoryFunctions[] = {
     "memset", "memcpy", "memmove"
   };
 
   initializeFunctionList(kmodule, outputFunctions, outputFunctionsWhitelist);
   initializeFunctionList(kmodule, inputFunctions, inputFunctionsBlacklist);
-  initializeFunctionList(kmodule, libraryFunctions, libraryFunctionsList);
+  initializeFunctionList(kmodule, memoryFunctions, memoryFunctionsList);
 
   listInitializedForKModule = kmodule;
 }
@@ -139,8 +139,8 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
                    << f->getName() << "()\n";
     }
     enterListedFunction(f);
-  } else if (std::binary_search(libraryFunctionsList.begin(),
-                                libraryFunctionsList.end(),
+  } else if (std::binary_search(memoryFunctionsList.begin(),
+                                memoryFunctionsList.end(),
                                 f)) {
     ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
     ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
@@ -159,7 +159,7 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
         std::uint64_t offset = addr - mo->address;
 
         if (mo->size >= offset + count) {
-          enterLibraryFunction(f, constAddr, mo, os, count);
+          enterMemoryFunction(f, constAddr, mo, os, count);
         }
       }
     }
@@ -169,8 +169,8 @@ void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
 void MemoryState::registerFunctionRet(llvm::Function *f) {
   if (isInListedFunction(f)) {
     leaveListedFunction();
-  } else if (isInLibraryFunction(f)) {
-    leaveLibraryFunction();
+  } else if (isInMemoryFunction(f)) {
+    leaveMemoryFunction();
   }
 }
 
@@ -734,52 +734,52 @@ bool MemoryState::isInListedFunction(llvm::Function *f) {
   return (listedFunction.entered && f == listedFunction.function);
 }
 
-bool MemoryState::enterLibraryFunction(llvm::Function *f,
+bool MemoryState::enterMemoryFunction(llvm::Function *f,
   ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
   std::size_t bytes) {
-  if (libraryFunction.entered) {
+  if (memoryFunction.entered) {
     // we can only enter one library function at a time
-    klee_warning_once(f, "already entered a library function");
+    klee_warning_once(f, "already entered a memory function");
     return false;
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering library function: "
+    llvm::errs() << "MemoryState: entering memory function: "
                  << f->getName() << "\n";
   }
 
   unregisterWrite(address, *mo, *os, bytes);
 
-  libraryFunction.entered = true;
-  libraryFunction.function = f;
-  libraryFunction.address = address;
-  libraryFunction.mo = mo;
-  libraryFunction.bytes = bytes;
+  memoryFunction.entered = true;
+  memoryFunction.function = f;
+  memoryFunction.address = address;
+  memoryFunction.mo = mo;
+  memoryFunction.bytes = bytes;
 
   updateDisableMemoryState();
 
   return true;
 }
 
-bool MemoryState::isInLibraryFunction(llvm::Function *f) {
-  return (libraryFunction.entered && f == libraryFunction.function);
+bool MemoryState::isInMemoryFunction(llvm::Function *f) {
+  return (memoryFunction.entered && f == memoryFunction.function);
 }
 
-void MemoryState::leaveLibraryFunction() {
+void MemoryState::leaveMemoryFunction() {
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: leaving library function: "
-                 << libraryFunction.function->getName() << "\n";
+    llvm::errs() << "MemoryState: leaving memory function: "
+                 << memoryFunction.function->getName() << "\n";
   }
 
-  const MemoryObject *mo = libraryFunction.mo;
+  const MemoryObject *mo = memoryFunction.mo;
   const ObjectState *os = executionState->addressSpace.findObject(mo);
 
-  libraryFunction.entered = false;
-  libraryFunction.function = nullptr;
+  memoryFunction.entered = false;
+  memoryFunction.function = nullptr;
 
   updateDisableMemoryState();
 
-  registerWrite(libraryFunction.address, *mo, *os, libraryFunction.bytes);
+  registerWrite(memoryFunction.address, *mo, *os, memoryFunction.bytes);
 }
 
 void MemoryState::registerPushFrame(const KFunction *kf) {
