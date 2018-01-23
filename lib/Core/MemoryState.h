@@ -32,8 +32,11 @@ private:
   MemoryTrace trace;
   const ExecutionState *executionState = nullptr;
 
-  bool disableMemoryState = false;
-  bool globalDisableMemoryState = false;
+  // klee_enable_memory_state() is inserted by KLEE before executing the entry
+  // point chosen by the user. Thus, the initialization of (uc)libc or POSIX
+  // runtime are not analyzed (we asume them to be free of liveness violations).
+  bool disableMemoryState = true;
+  bool globalDisableMemoryState = true;
 
   struct listedFunction {
     bool entered = false;

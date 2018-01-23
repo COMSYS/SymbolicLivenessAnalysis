@@ -627,6 +627,26 @@ static void parseArguments(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv, " klee\n");
 }
 
+static int enableInfiniteLoopDetection(Module *mainModule) {
+  Function *mainFn = mainModule->getFunction(EntryPoint);
+  if (!mainFn) {
+    klee_error("'%s' function not found in module.", EntryPoint.c_str());
+  }
+
+  Instruction *firstInst = &*(mainFn->begin()->begin());
+  LLVMContext &ctx = mainModule->getContext();
+
+  Function *enableMemoryStateFn = Function::Create(
+    FunctionType::get(Type::getVoidTy(ctx), false),
+    GlobalValue::ExternalLinkage,
+    "klee_enable_memory_state",
+    mainModule);
+
+  CallInst::Create(enableMemoryStateFn, "", firstInst);
+
+  return 0;
+}
+
 static int initEnv(Module *mainModule) {
 
   /*
@@ -715,6 +735,8 @@ static const char *modelledExternals[] = {
   "klee_assume",
   "klee_check_memory_access",
   "klee_clear_memory_state",
+  "klee_enable_memory_state",
+  "klee_disable_memory_state",
   "klee_dump_memory_trace",
   "klee_define_fixed_object",
   "klee_get_errno",
@@ -1211,6 +1233,14 @@ int main(int argc, char **argv, char **envp) {
   if (!mainModule) {
     klee_error("error loading program '%s': %s", InputFile.c_str(),
                errorMsg.c_str());
+  }
+
+  if (DetectInfiniteLoops) {
+    // inject before everything else, so that functions (such as runtime or libc
+    // initialization) inserted before the EntryPoint are not checked
+    int r = enableInfiniteLoopDetection(mainModule);
+    if (r != 0)
+      return r;
   }
 
   if (WithPOSIXRuntime) {
