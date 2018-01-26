@@ -440,6 +440,13 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                           << MemoryState::getTraceStructSizes().second << ",\n";
         (*statesJSONFile) << "    \"memory_state_size\": "
                           << sizeof(MemoryState) << ",\n";
+        (*statesJSONFile) << "    \"truncate_on_fork\": ";
+        if (InfiniteLoopDetectionTruncateOnFork) {
+          (*statesJSONFile) << "true";
+        } else {
+          (*statesJSONFile) << "false";
+        }
+        (*statesJSONFile) << ",\n";
       }
 
       std::string fork_file_name =
@@ -2979,6 +2986,9 @@ void Executor::updateStatesJSON(KInstruction *ki, const ExecutionState &state,
                         << state.memoryState.getTraceCapacity().first << ",\n";
       (*statesJSONFile) << "    \"frames_capacity\": "
                         << state.memoryState.getTraceCapacity().second << ",\n";
+      size_t topSF = state.memoryState.getNumberOfEntriesInCurrentStackFrame();
+      (*statesJSONFile) << "    \"current_frame_length\": "
+                        << topSF << ",\n";
       if (!ktest.empty()) {
         (*statesJSONFile) << "    \"ktest\": \"" << ktest << "\",\n";
       }
@@ -3030,6 +3040,21 @@ void Executor::updateForkJSON(const ExecutionState &current,
     } else {
       (*forkJSONFile) << "    \"true_id\": " << trueState.id << ",\n";
       (*forkJSONFile) << "    \"false_id\": " << falseState.id << ",\n";
+    }
+    if (trueState.id == falseState.id || current.id != trueState.id) {
+      (*forkJSONFile) << "    \"new_trace_capacity\": "
+                      << trueState.memoryState.getTraceCapacity().first
+                      << ",\n";
+      (*forkJSONFile) << "    \"new_frames_capacity\": "
+                      << trueState.memoryState.getTraceCapacity().second
+                      << ",\n";
+    } else {
+      (*forkJSONFile) << "    \"new_trace_capacity\": "
+                      << falseState.memoryState.getTraceCapacity().first
+                      << ",\n";
+      (*forkJSONFile) << "    \"new_frames_capacity\": "
+                      << falseState.memoryState.getTraceCapacity().second
+                      << ",\n";
     }
     (*forkJSONFile) << "    \"timestamp\": " << seconds.count()
                     << "." << milliseconds.count() << ",\n";

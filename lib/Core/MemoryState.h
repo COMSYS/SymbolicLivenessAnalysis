@@ -162,6 +162,10 @@ public:
     return trace.getTraceCapacity();
   }
 
+  size_t getNumberOfEntriesInCurrentStackFrame() const {
+    return trace.getNumberOfEntriesInCurrentStackFrame();
+  }
+
   size_t getFunctionListsLength() const {
     return MemoryState::outputFunctionsWhitelist.size()
         + MemoryState::inputFunctionsBlacklist.size()
