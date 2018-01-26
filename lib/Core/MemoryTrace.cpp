@@ -119,15 +119,7 @@ bool MemoryTrace::findInfiniteLoopInFunction() {
       "current stack frame is empty");
   }
 
-  auto stackFramesIt = stackFrames.rbegin();
-  std::size_t topStackFrameBoundary = 0;
-  if (stackFramesIt != stackFrames.rend()) {
-    // first index that belongs to current stack frame
-    topStackFrameBoundary = stackFramesIt->index;
-  }
-
-  // calculate number of entries within first stack frame
-  std::size_t topStackFrameEntries = trace.size() - topStackFrameBoundary;
+  std::size_t topStackFrameEntries = getNumberOfEntriesInCurrentStackFrame();
 
   // find matching entries within first stack frame
   if (topStackFrameEntries > 1) {

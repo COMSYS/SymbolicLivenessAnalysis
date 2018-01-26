@@ -75,6 +75,18 @@ public:
     return std::make_pair(sizeof(MemoryTraceEntry), sizeof(StackFrameEntry));
   }
 
+  size_t getNumberOfEntriesInCurrentStackFrame() const {
+    auto stackFramesIt = stackFrames.rbegin();
+    std::size_t topStackFrameBoundary = 0;
+    if (stackFramesIt != stackFrames.rend()) {
+      // first index that belongs to current stack frame
+      topStackFrameBoundary = stackFramesIt->index;
+    }
+
+    // calculate number of entries within first stack frame
+    return trace.size() - topStackFrameBoundary;
+  }
+
   void registerBasicBlock(const KInstruction *instruction,
                           const fingerprint_t &fingerprint);
   void registerEndOfStackFrame(const KFunction *kf,
