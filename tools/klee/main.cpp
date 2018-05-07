@@ -395,11 +395,6 @@ std::string KleeHandler::processTestCase(const ExecutionState &state,
                                          const char *errorSuffix) {
   std::string ktest_output_name = "";
 
-  if (errorMessage && OptExitOnError) {
-    m_interpreter->prepareForEarlyExit();
-    klee_error("EXITING ON ERROR:\n%s\n", errorMessage);
-  }
-
   if (!NoOutput) {
     std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
     bool success = m_interpreter->getSymbolicSolution(state, out);
@@ -523,6 +518,11 @@ std::string KleeHandler::processTestCase(const ExecutionState &state,
          << elapsed_time << "s\n";
       delete f;
     }
+  }
+  
+  if (errorMessage && OptExitOnError) {
+    m_interpreter->prepareForEarlyExit();
+    klee_error("EXITING ON ERROR:\n%s\n", errorMessage);
   }
 
   return ktest_output_name;
@@ -704,6 +704,8 @@ static const char *modelledExternals[] = {
   "_assert",
   "__assert_fail",
   "__assert_rtn",
+  "__errno_location",
+  "__error",
   "calloc",
   "_exit",
   "exit",

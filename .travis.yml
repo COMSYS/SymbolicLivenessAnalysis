@@ -32,11 +32,10 @@ env:
     #   COVERAGE: {0, 1}
     #   USE_TCMALLOC: {0, 1}
 
-    # COVERAGE set indicated that coverage data should be uploaded to the server, only ONE job should have COVERAGE set
+    # COVERAGE when set indicates that coverage data should be uploaded to the service, only ONE job should have COVERAGE set
 
     matrix:
 
-    # TODO: Add coverage build
     # TODO: Add Doxygen build
 
     # Check newer LLVMs
@@ -69,6 +68,9 @@ env:
 
     # Check with TCMALLOC
     - LLVM_VERSION=3.4 SOLVERS=STP STP_VERSION=2.1.2 KLEE_UCLIBC=klee_uclibc_v1.0.0 DISABLE_ASSERTIONS=0 ENABLE_OPTIMIZED=1 COVERAGE=0 USE_TCMALLOC=1
+
+    # Coverage build
+    - LLVM_VERSION=3.4 SOLVERS=STP:Z3 STP_VERSION=2.1.2 KLEE_UCLIBC=klee_uclibc_v1.0.0 DISABLE_ASSERTIONS=0 ENABLE_OPTIMIZED=0 COVERAGE=1 USE_TCMALLOC=0
     global:
     - secure: EF/WAc4BdIRUchF3mjATN3/UwtGWtGaRgb5oIIJHjKhgZFdPsgWsXFgaOB0jaK2hfO/svj/LvlasuRIGxeePVjeaiX8ZlVpuHiX67vdYLY+0kCDRwkusRjm60/GbPU9O/Xjgb/d4aWAEkoq5OnsprVTEvU8iY2JHtAqgwR+wW9I=
     - secure: Hrp1MRSxDUH2GTQg3QR/yUttY/3KmgbFb5e+zyy551dKpHjxJdsNe8bquY9oFoT7KmPQYl0HNNjEv4qWW8RK+HWHOCB55nL1KlGpOG7vAJcUEZg7ScbliGgiovMB6jIQVfeP9FhYngfc13vNZQ5PGlqzfSsHSAbvkwEogBToHVw=
@@ -84,7 +86,14 @@ addons:
   apt:
     sources:
     - sourceline: 'ppa:ubuntu-toolchain-r/test'
-    - sourceline: 'ppa:h-rayflood/llvm'
+    - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-3.4 main'
+      key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
+    - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-3.5 main'
+      key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
+    - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-3.6 main'
+      key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
+    - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-3.7 main'
+      key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
     - sourceline: 'deb http://download.opensuse.org/repositories/home:/delcypher:/z3/xUbuntu_14.04/ /'
       key_url: 'http://download.opensuse.org/repositories/home:delcypher:z3/xUbuntu_14.04/Release.key'
     packages:
@@ -95,8 +104,10 @@ addons:
     - libedit-dev
     - libselinux1-dev
     - cmake
+    - lcov
 
 cache:
+  ccache: true
   apt: true
   directories:
     - $HOME/Library/Caches/Homebrew
@@ -107,7 +118,7 @@ before_install:
     ###########################################################################
     # Update package information
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update; fi
-    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update && brew tap klee/klee; fi
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update && brew tap klee/klee && brew install ccache && export PATH="/usr/local/opt/ccache/libexec:$PATH" ; fi
     ###########################################################################
     # Set up out of source build directory
     ###########################################################################

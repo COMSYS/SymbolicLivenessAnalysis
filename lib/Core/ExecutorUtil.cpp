@@ -19,18 +19,22 @@
 #include "klee/Internal/Module/KModule.h"
 
 #include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/util/GetElementPtrTypeIterator.h"
 
-#include "llvm/IR/Function.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Operator.h"
+#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
+#include "llvm/Support/GetElementPtrTypeIterator.h"
+#else
+#include "llvm/IR/GetElementPtrTypeIterator.h"
+#endif
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
 
-using namespace klee;
 using namespace llvm;
 
 namespace klee {
@@ -58,11 +62,15 @@ namespace klee {
         return ConstantExpr::create(0, getWidthForLLVMType(c->getType()));
       } else if (const ConstantDataSequential *cds =
                  dyn_cast<ConstantDataSequential>(c)) {
+        // Handle a vector or array: first element has the smallest address,
+        // the last element the highest
         std::vector<ref<Expr> > kids;
-        for (unsigned i = 0, e = cds->getNumElements(); i != e; ++i) {
-          ref<Expr> kid = evalConstant(cds->getElementAsConstant(i), ki);
+        for (unsigned i = cds->getNumElements(); i != 0; --i) {
+          ref<Expr> kid = evalConstant(cds->getElementAsConstant(i - 1), ki);
           kids.push_back(kid);
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         ref<Expr> res = ConcatExpr::createN(kids.size(), kids.data());
         return cast<ConstantExpr>(res);
       } else if (const ConstantStruct *cs = dyn_cast<ConstantStruct>(c)) {
@@ -83,6 +91,8 @@ namespace klee {
 
           kids.push_back(kid);
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         ref<Expr> res = ConcatExpr::createN(kids.size(), kids.data());
         return cast<ConstantExpr>(res);
       } else if (const ConstantArray *ca = dyn_cast<ConstantArray>(c)){
@@ -92,18 +102,27 @@ namespace klee {
           ref<Expr> kid = evalConstant(ca->getOperand(op), ki);
           kids.push_back(kid);
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         ref<Expr> res = ConcatExpr::createN(kids.size(), kids.data());
         return cast<ConstantExpr>(res);
       } else if (const ConstantVector *cv = dyn_cast<ConstantVector>(c)) {
         llvm::SmallVector<ref<Expr>, 8> kids;
         const size_t numOperands = cv->getNumOperands();
         kids.reserve(numOperands);
-        for (unsigned i = 0; i < numOperands; ++i) {
-          kids.push_back(evalConstant(cv->getOperand(i), ki));
+        for (unsigned i = numOperands; i != 0; --i) {
+          kids.push_back(evalConstant(cv->getOperand(i - 1), ki));
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         ref<Expr> res = ConcatExpr::createN(numOperands, kids.data());
         assert(isa<ConstantExpr>(res) &&
                "result of constant vector built is not a constant");
+        return cast<ConstantExpr>(res);
+      } else if (const BlockAddress * ba = dyn_cast<BlockAddress>(c)) {
+        // return the address of the specified basic block in the specified function
+        const auto arg_bb = (BasicBlock *) ba->getOperand(1);
+        const auto res = Expr::createPointer((uint64_t) (unsigned long) (void *) arg_bb);
         return cast<ConstantExpr>(res);
       } else {
         std::string msg("Cannot handle constant ");
@@ -186,34 +205,31 @@ namespace klee {
 
     case Instruction::GetElementPtr: {
       ref<ConstantExpr> base = op1->ZExt(Context::get().getPointerWidth());
-
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
-        ref<ConstantExpr> addend = 
-          ConstantExpr::alloc(0, Context::get().getPointerWidth());
-
-        if (StructType *st = dyn_cast<StructType>(*ii)) {
-          const StructLayout *sl = kmodule->targetData->getStructLayout(st);
-          const ConstantInt *ci = cast<ConstantInt>(ii.getOperand());
-
-          addend = ConstantExpr::alloc(sl->getElementOffset((unsigned)
-                                                            ci->getZExtValue()),
-                                       Context::get().getPointerWidth());
-        } else {
-          const SequentialType *set = cast<SequentialType>(*ii);
-          ref<ConstantExpr> index = 
+        ref<ConstantExpr> indexOp =
             evalConstant(cast<Constant>(ii.getOperand()), ki);
-          unsigned elementSize = 
-            kmodule->targetData->getTypeStoreSize(set->getElementType());
+        if (indexOp->isZero())
+          continue;
 
-          index = index->ZExt(Context::get().getPointerWidth());
-          addend = index->Mul(ConstantExpr::alloc(elementSize, 
-                                                  Context::get().getPointerWidth()));
+        // Handle a struct index, which adds its field offset to the pointer.
+        if (StructType *STy = dyn_cast<StructType>(*ii)) {
+          unsigned ElementIdx = indexOp->getZExtValue();
+          const StructLayout *SL = kmodule->targetData->getStructLayout(STy);
+          base = base->Add(
+              ConstantExpr::alloc(APInt(Context::get().getPointerWidth(),
+                                        SL->getElementOffset(ElementIdx))));
+          continue;
         }
 
-        base = base->Add(addend);
+        // For array or vector indices, scale the index by the size of the type.
+        // Indices can be negative
+        base = base->Add(indexOp->SExt(Context::get().getPointerWidth())
+                             ->Mul(ConstantExpr::alloc(
+                                 APInt(Context::get().getPointerWidth(),
+                                       kmodule->targetData->getTypeAllocSize(
+                                           ii.getIndexedType())))));
       }
-
       return base;
     }
       
