@@ -172,9 +172,22 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
         // basic block
         for (auto it = std::next(bb.begin()), e = bb.end(); it != e; ++it) {
           Instruction &i = *it;
+          const Instruction *lastPHI = &i;
           if (i.getOpcode() == Instruction::PHI) {
-            Value *v = cast<Value>(&i);
-            killed.erase(v);
+            Value *phiValue = cast<Value>(&i);
+
+            // last PHI node in current BasicBlock
+            // Note: We cannot use getFirstNonPHI() here because of the NOP.
+            while (lastPHI->getNextNode()->getOpcode() == Instruction::PHI) {
+                lastPHI = lastPHI->getNextNode();
+            }
+
+            // values live after the evaluation of last PHI node
+            valueset_t &phiLive = getInstructionInfo(lastPHI).live;
+
+            if (phiLive.count(phiValue) > 0) {
+                killed.erase(phiValue);
+            }
           } else {
             // http://releases.llvm.org/3.4.2/docs/LangRef.html#phi-instruction
             // "There must be no non-phi instructions between the start of a
