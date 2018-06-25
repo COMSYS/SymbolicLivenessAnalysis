@@ -58,7 +58,6 @@ private:
 
   struct basicBlockInfo {
     const llvm::BasicBlock *bb = nullptr;
-    const llvm::BasicBlock *prevbb = nullptr;
     std::vector<llvm::Value *> liveRegisters;
   } basicBlockInfo;
 
@@ -105,17 +104,22 @@ private:
   void registerLocal(const llvm::Instruction *inst, ref<Expr> value);
   void unregisterLocal(const llvm::Instruction *inst) {
     ref<Expr> value = getLocalValue(inst);
-    if (!value.isNull()) {
-      registerLocal(inst, value);
 
-      if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-        llvm::errs() << "MemoryState: unregister local %" << inst->getName()
-                     << ": " << ExprString(value) << " "
-                     << "[fingerprint: " << fingerprint.getFingerprintAsString()
-                     << "]\n";
-      }
+    // value was already unregistered when it was marked as dead
+    if (value.isNull())
+      return;
+
+    registerLocal(inst, value);
+
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: unregister local %" << inst->getName()
+                   << ": " << ExprString(value) << " "
+                   << "[fingerprint: " << fingerprint.getFingerprintAsString()
+                   << "]\n";
     }
   }
+
+  bool isLocalLive(const llvm::Instruction *inst);
 
   void updateDisableMemoryState() {
     disableMemoryState = listedFunction.entered || libraryFunction.entered || memoryFunction.entered || globalDisableMemoryState;
@@ -226,10 +230,11 @@ public:
 
   void enterBasicBlock(const llvm::BasicBlock *dst,
                        const llvm::BasicBlock *src);
+  void phiNodeProcessingCompleted(const llvm::BasicBlock *dst,
+                                  const llvm::BasicBlock *src);
 
   void registerEntryBasicBlock(const llvm::BasicBlock *entry);
-  void registerBasicBlock(const llvm::BasicBlock *dst,
-                          const llvm::BasicBlock *src);
+  void registerBasicBlock(const llvm::BasicBlock *bb);
 
   bool findInfiniteLoopInFunction();
   bool findInfiniteRecursion();

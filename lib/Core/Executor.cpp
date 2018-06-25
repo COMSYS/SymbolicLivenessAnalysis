@@ -1527,19 +1527,32 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
   KFunction *kf = state.stack.back().kf;
   unsigned entry = kf->basicBlockEntry[dst];
   state.pc = &kf->instructions[entry];
-  if (state.pc->inst->getOpcode() == Instruction::PHI) {
-    PHINode *first = static_cast<PHINode*>(state.pc->inst);
-    state.incomingBBIndex = first->getBasicBlockIndex(src);
-  }
   if (DetectInfiniteLoops) {
     // enterBasicBlock updates live register information, thus we need to call
     // it on every BasicBlock change, not only on ones to a BasicBlock with more
     // than one predecessor
     state.memoryState.enterBasicBlock(dst, src);
+  }
+  if (state.pc->inst->getOpcode() == Instruction::PHI) {
+    PHINode *first = static_cast<PHINode*>(state.pc->inst);
+    state.incomingBBIndex = first->getBasicBlockIndex(src);
+  } else {
+    phiNodeProcessingCompleted(dst, src, state);
+  }
+}
+
+void Executor::phiNodeProcessingCompleted(BasicBlock *dst, BasicBlock *src,
+                                          ExecutionState &state) {
+  if (DetectInfiniteLoops) {
+    // phiNodeProcessingCompleted updates live register information, thus we
+    // need to call it on every BasicBlock change (even if it does not contain
+    // any PHI nodes), not only on ones to a BasicBlock with more than one
+    // predecessor
+    state.memoryState.phiNodeProcessingCompleted(dst, src);
     if ((dst->getSinglePredecessor() == nullptr) ||
         InfiniteLoopDetectionDisableTwoPredecessorOpt) {
       // more than one predecessor
-      state.memoryState.registerBasicBlock(dst, src);
+      state.memoryState.registerBasicBlock(dst);
       if (state.memoryState.findInfiniteLoopInFunction()) {
         terminateStateOnError(state, "infinite loop", InfiniteLoop);
       }
@@ -2016,6 +2029,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::PHI: {
     ref<Expr> result = eval(ki, state.incomingBBIndex, state).value;
     bindLocal(ki, state, result);
+    assert(ki == state.prevPC && "executing instruction different from state.prevPC");
+    if (i->getNextNode()->getOpcode() != Instruction::PHI) {
+      // no more PHI nodes coming
+      BasicBlock *src = cast<PHINode>(i)->getIncomingBlock(state.incomingBBIndex);
+      phiNodeProcessingCompleted(i->getParent(), src, state);
+    }
     break;
   }
 

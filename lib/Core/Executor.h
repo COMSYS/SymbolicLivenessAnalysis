@@ -257,6 +257,9 @@ private:
   void transferToBasicBlock(llvm::BasicBlock *dst, 
 			    llvm::BasicBlock *src,
 			    ExecutionState &state);
+  void phiNodeProcessingCompleted(llvm::BasicBlock *dst,
+                llvm::BasicBlock *src,
+                ExecutionState &state);
 
   void callExternalFunction(ExecutionState &state,
                             KInstruction *target,

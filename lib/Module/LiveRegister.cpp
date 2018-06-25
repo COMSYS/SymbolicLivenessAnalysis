@@ -110,8 +110,9 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(Function &F) {
       for (auto i = value->use_begin(), e = value->use_end(); i != e; ++i) {
         if (Instruction *inst = dyn_cast<Instruction>(*i)) {
           if (inst->getOpcode() == Instruction::PHI) {
+            // found usage of value in gen set by PHI node
             termLive.insert(value);
-            // we do not need to search any further for this particular value
+            // we do only need to add each value once to the live set
             break;
           }
         }
@@ -167,14 +168,13 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
         // exclude registers that are consumed during the annotated basic block
         killed = setMinus(killed, consumed);
 
-        // exclude registers that are used by PHI nodes in annotated basic block
+        // exclude registers that are being written to by PHI nodes in annotated
+        // basic block
         for (auto it = std::next(bb.begin()), e = bb.end(); it != e; ++it) {
-          const Instruction &i = *it;
+          Instruction &i = *it;
           if (i.getOpcode() == Instruction::PHI) {
-            const PHINode &phi = cast<PHINode>(i);
-            if (Value *phiOperand = phi.getIncomingValueForBlock(pred)) {
-              killed.erase(phiOperand);
-            }
+            Value *v = cast<Value>(&i);
+            killed.erase(v);
           } else {
             // http://releases.llvm.org/3.4.2/docs/LangRef.html#phi-instruction
             // "There must be no non-phi instructions between the start of a
@@ -248,12 +248,14 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
 
       // generate gen sets
       if (i->getNumOperands() != 0) {
+        // iterate over all operands (uses) of the current instruction
         for (auto use = i->op_begin(), e = i->op_end(); use != e; ++use) {
           if (Instruction *op = dyn_cast<Instruction>(use->get())) {
             if (i->getOpcode() == Instruction::PHI) {
               // PHI nodes: attach operand to gen set of the incoming basic
               // block's terminator instruction because operands of PHI nodes
-              // are not in general live at the start of the basic block
+              // are not in general live at the start of the basic block that
+              // contain the corresponding PHI node
               PHINode *phi = cast<PHINode>(i);
               BasicBlock *incoming = phi->getIncomingBlock(*use);
               if (Instruction *incomingTerm = incoming->getTerminator()) {
