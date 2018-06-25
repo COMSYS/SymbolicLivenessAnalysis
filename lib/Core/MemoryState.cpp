@@ -575,19 +575,19 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *bb) {
 
 void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
                                          const llvm::BasicBlock *src) {
-  // kill registers based on incoming edge (edge from src to dst)
+  // kill registers based on outgoing edge (edge from src to dst)
 
   // liveregister.killed:
   //
   // +-- edges
   // |
   // (
-  //   (precedingBasicBlock1, (killedRegister1, killedRegister2)), // edge 1
-  //   (precedingBasicBlock2, (killedRegister3, killedRegister3))  // edge 2
+  //   (succeedingBasicBlock1, (killedRegister1, killedRegister2)), // edge 1
+  //   (succeedingBasicBlock2, (killedRegister3, killedRegister4))  // edge 2
   // ) |                      |
   //   +-- edge               +-- kills
 
-  const llvm::Instruction *inst = &*dst->begin();
+  const llvm::Instruction *inst = src->getTerminator();
   llvm::MDNode *edges = inst->getMetadata("liveregister.killed");
   if (!edges)
     return;
@@ -602,7 +602,7 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
       llvm::BasicBlock *bb = dyn_cast<llvm::BasicBlock>(bbValue);
       assert(bb != nullptr && "MemoryState: liveregister.killed metadata"
         "does not reference valid basic block");
-      if (bb != src) {
+      if (bb != dst) {
         // wrong edge: no evaluation of registers to kill, go to next edge
         continue;
       }

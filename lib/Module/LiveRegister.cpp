@@ -149,28 +149,33 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     std::vector<Value *> consumedVec(consumed.begin(), consumed.end());
     term->setMetadata("liveregister.consumed", MDNode::get(ctx, consumedVec));
 
-    // attach to first instruction: immediately killed registers for each
-    // incoming basic block, i.e. registers that are only used by specific basic
-    // blocks but not the annotated one
+    // attach to terminator instruction: immediately killed registers for each
+    // succeeding basic block, i.e. registers that are only used by specific
+    // basic blocks but not the succeeding one
     // WARNING: we specifically exclude registers that are consumed during the
-    //          execution of the annotated basic block from this set
+    //          execution of the succeding basic block from this set
     // Example:
     // (
-    //   (precedingBasicBlock1, (killedRegister1, killedRegister2)),
-    //   (precedingBasicBlock2, (killedRegister3, killedRegister3))
+    //   (succeedingBasicBlock1, (killedRegister1, killedRegister2)),
+    //   (succeedingBasicBlock2, (killedRegister3, killedRegister3))
     // )
     std::vector<Value *> k;
-    for (auto it = pred_begin(&bb), e = pred_end(&bb); it != e; ++it) {
-      BasicBlock *pred = *it;
-      if (Instruction *predTerm = pred->getTerminator()) {
-        valueset_t &predLive = getInstructionInfo(predTerm).live;
-        valueset_t killed = setMinus(predLive, firstLive);
-        // exclude registers that are consumed during the annotated basic block
+    for (auto it = succ_begin(&bb), e = succ_end(&bb); it != e; ++it) {
+      BasicBlock *succ = *it;
+      if (Instruction *succFirst = &*succ->begin()) {
+        valueset_t &succFirstLive = getInstructionInfo(succFirst).live;
+        valueset_t killed = setMinus(termLive, succFirstLive);
+
+        // exclude registers that are consumed during the succeeding basic block
+        Instruction *succTerm = succ->getTerminator();
+        valueset_t &succTermLive = getInstructionInfo(succTerm).live;
+        valueset_t succConsumed = setMinus(succFirstLive, succTermLive);
         killed = setMinus(killed, consumed);
 
-        // exclude registers that are being written to by PHI nodes in annotated
-        // basic block
-        for (auto it = std::next(bb.begin()), e = bb.end(); it != e; ++it) {
+        // exclude registers that are being written to by PHI nodes in
+        // succeeding basic block
+        for (auto it = std::next(succ->begin()), e = succ->end(); it != e; ++it)
+        {
           Instruction &i = *it;
           const Instruction *lastPHI = &i;
           if (i.getOpcode() == Instruction::PHI) {
@@ -201,13 +206,11 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
         }
 
         std::vector<Value *> killedVec(killed.begin(), killed.end());
-        std::vector<Value *> tuple = {pred, MDNode::get(ctx, killedVec)};
+        std::vector<Value *> tuple = {succ, MDNode::get(ctx, killedVec)};
         k.push_back(MDNode::get(ctx, tuple));
       }
     }
-    // first real instruction after nop
-    Instruction *first = &*(std::next(bb.begin()));
-    first->setMetadata("liveregister.killed", MDNode::get(ctx, k));
+    term->setMetadata("liveregister.killed", MDNode::get(ctx, k));
   }
 }
 
