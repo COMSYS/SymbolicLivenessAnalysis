@@ -187,7 +187,7 @@ public:
   }
 
   std::string getFingerprintAsString() {
-    return toString(fingerprint);
+    return toString(getFingerprint());
   }
 
   std::string getLocalDeltaAsString() {
