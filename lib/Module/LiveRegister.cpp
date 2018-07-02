@@ -263,24 +263,28 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
       }
 
       // generate gen sets
-      if (i->getNumOperands() != 0) {
+      if (i->getOpcode() == Instruction::PHI) {
+        // PHI nodes: attach operand to gen set of the incoming basic
+        // block's terminator instruction because operands of PHI nodes
+        // are not in general live at the start of the basic block that
+        // contain the corresponding PHI node
+        PHINode *phi = cast<PHINode>(i);
+
+        // iterate over all incoming basic blocks
+        for (auto ib = phi->block_begin(), e = phi->block_end(); ib != e; ++ib)
+        {
+          Value *value = phi->getIncomingValueForBlock(*ib);
+          if (isa<Instruction>(value)) {
+            Instruction *incomingTerm = (*ib)->getTerminator();
+            InstructionInfo &incomingII = getInstructionInfo(incomingTerm);
+            incomingII.gen.insert(value);
+          }
+        }
+      } else if (i->getNumOperands() != 0) {
         // iterate over all operands (uses) of the current instruction
         for (auto use = i->op_begin(), e = i->op_end(); use != e; ++use) {
           if (Instruction *op = dyn_cast<Instruction>(use->get())) {
-            if (i->getOpcode() == Instruction::PHI) {
-              // PHI nodes: attach operand to gen set of the incoming basic
-              // block's terminator instruction because operands of PHI nodes
-              // are not in general live at the start of the basic block that
-              // contain the corresponding PHI node
-              PHINode *phi = cast<PHINode>(i);
-              BasicBlock *incoming = phi->getIncomingBlock(*use);
-              if (Instruction *incomingTerm = incoming->getTerminator()) {
-                InstructionInfo &incomingII = getInstructionInfo(incomingTerm);
-                incomingII.gen.insert(op);
-              }
-            } else {
-              ii.gen.insert(op);
-            }
+            ii.gen.insert(op);
           }
         }
       }
