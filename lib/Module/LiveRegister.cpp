@@ -52,6 +52,7 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
   executeWorklistAlgorithm();
   propagatePhiUseToLiveSet(F);
 
+  computeBasicBlockInfo(F);
   attachAnalysisResultAsMetadata(F);
 
   // remove nop instructions that were added in the initialization phase
@@ -121,23 +122,93 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(Function &F) {
   }
 }
 
+void LiveRegisterPass::computeBasicBlockInfo(Function &F) {
+  for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
+    BasicBlock &bb = *it;
+
+    BasicBlockInfo &bbInfo = getBasicBlockInfo(&bb);
+
+    // "firstLive": registers that are live at the start of BB
+    // use live register set of nop instruction since instruction info only
+    // reflects registers that are live *after* the execution of the associated
+    // instruction
+    bbInfo.firstLive = &getInstructionInfo(&*bb.begin()).live;
+
+    // "termLive": registers that are live at the end of the BB
+    bbInfo.termLive = &getInstructionInfo(bb.getTerminator()).live;
+
+    // "consumed": registers that are not read in any of BB's successors
+    bbInfo.consumed = setMinus(*bbInfo.firstLive, *bbInfo.termLive);
+  }
+
+  // in the following, we assume that consumed registers are already calculated
+  // for all BBs
+
+  for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
+    BasicBlock &bb = *it;
+    BasicBlockInfo &bbInfo = getBasicBlockInfo(&bb);
+
+    std::vector<Value *> k;
+    for (auto it = succ_begin(&bb), e = succ_end(&bb); it != e; ++it) {
+      BasicBlock &succ = **it;
+      BasicBlockInfo &succInfo = getBasicBlockInfo(&succ);
+
+      // "killed": registers that are only used by specific succeeding BBs but
+      // not by succ (the currently considered successor)
+      auto &killed = bbInfo.killed[&succ];
+      killed = setMinus(*bbInfo.termLive, *succInfo.firstLive);
+
+      // exclude registers that are consumed during the succeeding basic block
+      killed = setMinus(killed, succInfo.consumed);
+
+      // exclude registers that are being written to by PHI nodes in
+      // succeeding basic block
+      for (auto it = std::next(succ.begin()), e = succ.end(); it != e; ++it) {
+        const Instruction &i = *it;
+        const Instruction *lastPHI = &i;
+        if (i.getOpcode() == Instruction::PHI) {
+          Value *phiValue = cast<Value>(const_cast<Instruction *>(&i));
+
+          // last PHI node in current BasicBlock
+          // Note: We cannot use getFirstNonPHI() here because of the NOP.
+          while (lastPHI->getNextNode()->getOpcode() == Instruction::PHI) {
+            lastPHI = lastPHI->getNextNode();
+          }
+
+          // values live after the evaluation of last PHI node
+          valueset_t &phiLive = getInstructionInfo(lastPHI).live;
+
+          if (phiLive.count(phiValue) > 0) {
+            // result of PHI node is live after evaluation of last PHI node
+            killed.erase(phiValue);
+          }
+        } else {
+          // http://releases.llvm.org/3.4.2/docs/LangRef.html#phi-instruction
+          // "There must be no non-phi instructions between the start of a
+          //  basic block and the PHI instructions: i.e. PHI instructions must
+          //  be first in a basic block."
+          // Thus, we can abort as soon as we encounter a non-PHI instruction
+          // (This is only valid here, because in this for-loop, we skip the
+          // nop instruction inserted at the begining of each basic block)
+          break;
+        }
+      }
+    }
+  }
+}
+
 void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
     LLVMContext &ctx = bb.getContext();
-
-    // use live register set of nop instruction since instruction info only
-    // reflects registers that are live *after* the execution of the associated
-    // instruction
-    valueset_t &firstLive = getInstructionInfo(&*bb.begin()).live;
-
+    BasicBlockInfo &bbInfo = getBasicBlockInfo(&bb);
     Instruction *term = bb.getTerminator();
-    valueset_t &termLive = getInstructionInfo(term).live;
 
     // attach to terminator instruction: live registers, i.e. registers that are
     // live at the end of the annotated basic block
     // Example:
     // (liveRegister1, liveRegister2, liveRegister3)
+    valueset_t &termLive = *bbInfo.termLive;
     std::vector<Value *> liveVec(termLive.begin(), termLive.end());
     term->setMetadata("liveregister.live", MDNode::get(ctx, liveVec));
 
@@ -145,7 +216,7 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     // that are read for the last time within the basic block
     // Example:
     // (consumedRegister1, consumedRegister2, consumedRegister3)
-    valueset_t consumed = setMinus(firstLive, termLive);
+    valueset_t &consumed = bbInfo.consumed;
     std::vector<Value *> consumedVec(consumed.begin(), consumed.end());
     term->setMetadata("liveregister.consumed", MDNode::get(ctx, consumedVec));
 
@@ -162,53 +233,12 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     std::vector<Value *> k;
     for (auto it = succ_begin(&bb), e = succ_end(&bb); it != e; ++it) {
       BasicBlock *succ = *it;
-      if (Instruction *succFirst = &*succ->begin()) {
-        valueset_t &succFirstLive = getInstructionInfo(succFirst).live;
-        valueset_t killed = setMinus(termLive, succFirstLive);
 
-        // exclude registers that are consumed during the succeeding basic block
-        Instruction *succTerm = succ->getTerminator();
-        valueset_t &succTermLive = getInstructionInfo(succTerm).live;
-        valueset_t succConsumed = setMinus(succFirstLive, succTermLive);
-        killed = setMinus(killed, succConsumed);
+      valueset_t &killed = bbInfo.killed[succ];
 
-        // exclude registers that are being written to by PHI nodes in
-        // succeeding basic block
-        for (auto it = std::next(succ->begin()), e = succ->end(); it != e; ++it)
-        {
-          Instruction &i = *it;
-          const Instruction *lastPHI = &i;
-          if (i.getOpcode() == Instruction::PHI) {
-            Value *phiValue = cast<Value>(&i);
-
-            // last PHI node in current BasicBlock
-            // Note: We cannot use getFirstNonPHI() here because of the NOP.
-            while (lastPHI->getNextNode()->getOpcode() == Instruction::PHI) {
-                lastPHI = lastPHI->getNextNode();
-            }
-
-            // values live after the evaluation of last PHI node
-            valueset_t &phiLive = getInstructionInfo(lastPHI).live;
-
-            if (phiLive.count(phiValue) > 0) {
-                killed.erase(phiValue);
-            }
-          } else {
-            // http://releases.llvm.org/3.4.2/docs/LangRef.html#phi-instruction
-            // "There must be no non-phi instructions between the start of a
-            //  basic block and the PHI instructions: i.e. PHI instructions must
-            //  be first in a basic block."
-            // Thus, we can abort as soon as we encounter a non-PHI instruction
-            // (This is only valid here, because in this for-loop, we skip the
-            // nop instruction inserted at the begining of each basic block)
-            break;
-          }
-        }
-
-        std::vector<Value *> killedVec(killed.begin(), killed.end());
-        std::vector<Value *> tuple = {succ, MDNode::get(ctx, killedVec)};
-        k.push_back(MDNode::get(ctx, tuple));
-      }
+      std::vector<Value *> killedVec(killed.begin(), killed.end());
+      std::vector<Value *> tuple = {succ, MDNode::get(ctx, killedVec)};
+      k.push_back(MDNode::get(ctx, tuple));
     }
     term->setMetadata("liveregister.killed", MDNode::get(ctx, k));
   }
@@ -218,6 +248,8 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
   // iterate over all basic blocks
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
+    basicBlockIndex[&bb] = basicBlocks.size();
+    basicBlocks.emplace_back();
     // iterate over all instructions within a basic block
     for (BasicBlock::iterator it = bb.begin(), e = bb.end(); it != e; ++it) {
       Instruction *i = &*it;

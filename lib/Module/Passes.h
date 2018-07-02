@@ -199,6 +199,8 @@ private:
   typedef std::pair<llvm::Instruction*, llvm::Instruction*> edge_t;
   typedef std::unordered_set<llvm::Value *> valueset_t;
 
+  std::vector<edge_t> worklist;
+
   struct InstructionInfo {
     std::vector<edge_t> predecessorEdges;
     valueset_t gen;
@@ -206,7 +208,6 @@ private:
     valueset_t live;
   };
 
-  std::vector<edge_t> worklist;
   std::vector<InstructionInfo> instructions;
   std::unordered_map<const llvm::Instruction *, std::size_t> instructionIndex;
 
@@ -214,10 +215,25 @@ private:
     return instructions[instructionIndex[i]];
   }
 
+  struct BasicBlockInfo {
+    valueset_t *firstLive = nullptr; // InstructionInfo live set of NOP inst
+    valueset_t *termLive = nullptr; // InstructionInfo live set of terminator
+    valueset_t consumed;
+    std::unordered_map<const llvm::BasicBlock *, valueset_t> killed;
+  };
+
+  std::vector<BasicBlockInfo> basicBlocks;
+  std::unordered_map<const llvm::BasicBlock *, std::size_t> basicBlockIndex;
+
+  inline BasicBlockInfo& getBasicBlockInfo(const llvm::BasicBlock *bb) {
+    return basicBlocks[basicBlockIndex[bb]];
+  }
+
   void initializeWorklist(llvm::Function &F);
   void executeWorklistAlgorithm();
   void propagatePhiUseToLiveSet(llvm::Function &F);
 
+  void computeBasicBlockInfo(llvm::Function &F);
   void attachAnalysisResultAsMetadata(llvm::Function &F);
 
   void generateInstructionInfo(llvm::Function &F);
