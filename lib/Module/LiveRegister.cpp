@@ -17,16 +17,11 @@
 #include "llvm/IR/InstIterator.h"
 #endif
 
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 3)
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/User.h"
-#else
-#include "llvm/LLVMContext.h"
-#include "llvm/User.h"
-#endif
-
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/IR/User.h"
 
 #include <algorithm>
 
@@ -85,12 +80,12 @@ void LiveRegisterPass::executeWorklistAlgorithm() {
     const Instruction *pred = worklist.back().second;
     worklist.pop_back();
 
-    InstructionInfo &iII = getInstructionInfo(i);
-    InstructionInfo &predII = getInstructionInfo(pred);
+    InstructionInfo &iII = instructions[i];
+    InstructionInfo &predII = instructions[pred];
 
     valueset_t liveUpdated = transition(i, iII.live);
-    if (!subsetEquals(liveUpdated, predII.live)) {
-      predII.live.insert(liveUpdated.begin(), liveUpdated.end());
+    if (set_union(predII.live, liveUpdated)) {
+      // predII.live has changed
       addPredecessors(worklist, pred);
     }
   }
@@ -100,8 +95,8 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(Function &F) {
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
     Instruction *term = bb.getTerminator();
-    valueset_t &termLive = getInstructionInfo(term).live;
-    valueset_t &termGen = getInstructionInfo(term).gen;
+    valueset_t &termLive = instructions[term].live;
+    valueset_t &termGen = instructions[term].gen;
 
     // If a register is only used by PHI nodes in all following blocks, it is
     // included in the gen set of the terminator instruction but was not yet
@@ -126,19 +121,19 @@ void LiveRegisterPass::computeBasicBlockInfo(Function &F) {
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
 
-    BasicBlockInfo &bbInfo = getBasicBlockInfo(&bb);
+    BasicBlockInfo &bbInfo = basicBlocks[&bb];
 
     // "firstLive": registers that are live at the start of BB
     // use live register set of nop instruction since instruction info only
     // reflects registers that are live *after* the execution of the associated
     // instruction
-    bbInfo.firstLive = &getInstructionInfo(&*bb.begin()).live;
+    bbInfo.firstLive = &instructions[&*bb.begin()].live;
 
     // "termLive": registers that are live at the end of the BB
-    bbInfo.termLive = &getInstructionInfo(bb.getTerminator()).live;
+    bbInfo.termLive = &instructions[bb.getTerminator()].live;
 
     // "consumed": registers that are not read in any of BB's successors
-    bbInfo.consumed = setMinus(*bbInfo.firstLive, *bbInfo.termLive);
+    bbInfo.consumed = set_difference(*bbInfo.firstLive, *bbInfo.termLive);
   }
 
   // in the following, we assume that consumed registers are already calculated
@@ -146,20 +141,20 @@ void LiveRegisterPass::computeBasicBlockInfo(Function &F) {
 
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
-    BasicBlockInfo &bbInfo = getBasicBlockInfo(&bb);
+    BasicBlockInfo &bbInfo = basicBlocks[&bb];
 
     std::vector<Value *> k;
     for (auto it = succ_begin(&bb), e = succ_end(&bb); it != e; ++it) {
       BasicBlock &succ = **it;
-      BasicBlockInfo &succInfo = getBasicBlockInfo(&succ);
+      BasicBlockInfo &succInfo = basicBlocks[&succ];
 
       // "killed": registers that are only used by specific succeeding BBs but
       // not by succ (the currently considered successor)
       auto &killed = bbInfo.killed[&succ];
-      killed = setMinus(*bbInfo.termLive, *succInfo.firstLive);
+      killed = set_difference(*bbInfo.termLive, *succInfo.firstLive);
 
       // exclude registers that are consumed during the succeeding basic block
-      killed = setMinus(killed, succInfo.consumed);
+      set_subtract(killed, succInfo.consumed);
 
       // exclude registers that are being written to by PHI nodes in
       // succeeding basic block
@@ -176,7 +171,7 @@ void LiveRegisterPass::computeBasicBlockInfo(Function &F) {
           }
 
           // values live after the evaluation of last PHI node
-          valueset_t &phiLive = getInstructionInfo(lastPHI).live;
+          valueset_t &phiLive = instructions[lastPHI].live;
 
           if (phiLive.count(phiValue) > 0) {
             // result of PHI node is live after evaluation of last PHI node
@@ -201,7 +196,7 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
     LLVMContext &ctx = bb.getContext();
-    BasicBlockInfo &bbInfo = getBasicBlockInfo(&bb);
+    BasicBlockInfo &bbInfo = basicBlocks[&bb];
     Instruction *term = bb.getTerminator();
 
     // attach to terminator instruction: live registers, i.e. registers that are
@@ -245,16 +240,18 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
 }
 
 void LiveRegisterPass::generateInstructionInfo(Function &F) {
+  basicBlocks.reserve(F.size());
+  size_t numInstructions = 0;
   // iterate over all basic blocks
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
-    basicBlockIndex[&bb] = basicBlocks.size();
-    basicBlocks.emplace_back();
+    basicBlocks[&bb] = {};
+    numInstructions += bb.size();
+    instructions.reserve(numInstructions);
     // iterate over all instructions within a basic block
     for (BasicBlock::iterator it = bb.begin(), e = bb.end(); it != e; ++it) {
       Instruction *i = &*it;
-      instructionIndex[i] = instructions.size();
-      instructions.emplace_back();
+      instructions[i] = {};
     }
   }
 
@@ -269,7 +266,7 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
     // iterate over all instructions within a basic block
     for (BasicBlock::iterator it = bb.begin(), e = bb.end(); it != e; ++it) {
       Instruction *i = &*it;
-      InstructionInfo &ii = getInstructionInfo(i);
+      InstructionInfo &ii = instructions[i];
 
       // generate predecessorEdges
       if (i == bb.begin()) {
@@ -308,7 +305,7 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
           Value *value = phi->getIncomingValueForBlock(*ib);
           if (isa<Instruction>(value)) {
             Instruction *incomingTerm = (*ib)->getTerminator();
-            InstructionInfo &incomingII = getInstructionInfo(incomingTerm);
+            InstructionInfo &incomingII = instructions[incomingTerm];
             incomingII.gen.insert(value);
           }
         }
@@ -328,16 +325,16 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
 
 void LiveRegisterPass::addPredecessors(std::vector<edge_t> &worklist,
                                        const Instruction *i) {
-  std::vector<edge_t> &predEdges = getInstructionInfo(i).predecessorEdges;
+  std::vector<edge_t> &predEdges = instructions[i].predecessorEdges;
   worklist.insert(worklist.end(), predEdges.begin(), predEdges.end());
 }
 
 LiveRegisterPass::valueset_t
 LiveRegisterPass::transition(const Instruction *i, const valueset_t &set) {
-  InstructionInfo &ii = getInstructionInfo(i);
+  InstructionInfo &ii = instructions[i];
   valueset_t result = set;
 
-  result = setMinus(result, ii.kill);
+  set_subtract(result, ii.kill);
   result.insert(ii.gen.begin(), ii.gen.end());
   return result;
 }
@@ -346,35 +343,5 @@ Instruction *LiveRegisterPass::createNopInstruction(LLVMContext &ctx) const {
   ConstantInt *zero = ConstantInt::get(ctx, APInt(1, 0, false));
   return BinaryOperator::Create(Instruction::BinaryOps::Or, zero, zero);
 }
-
-template <typename T>
-bool LiveRegisterPass::subsetEquals(const std::unordered_set<T> &subset,
-                                    const std::unordered_set<T> &set) {
-  if (subset.size() == 0) {
-    return true;
-  }
-  for (auto &i : subset) {
-    typename std::unordered_set<T>::const_iterator pos = set.find(i);
-    if (pos == set.end()) {
-      return false;
-    }
-  }
-  return true;
-}
-
-template <typename T>
-std::unordered_set<T>
-LiveRegisterPass::setMinus(const std::unordered_set<T> &set,
-                           const std::unordered_set<T> &minus) {
-  std::unordered_set<T> result = set;
-  for (auto &i : minus) {
-    typename std::unordered_set<T>::iterator pos = result.find(i);
-    if (pos != result.end()) {
-      result.erase(pos);
-    }
-  }
-  return result;
-}
-
 
 }

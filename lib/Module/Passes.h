@@ -208,12 +208,7 @@ private:
     valueset_t live;
   };
 
-  std::vector<InstructionInfo> instructions;
-  std::unordered_map<const llvm::Instruction *, std::size_t> instructionIndex;
-
-  inline InstructionInfo& getInstructionInfo(const llvm::Instruction *i) {
-    return instructions[instructionIndex[i]];
-  }
+  std::unordered_map<const llvm::Instruction *, InstructionInfo> instructions;
 
   struct BasicBlockInfo {
     valueset_t *firstLive = nullptr; // InstructionInfo live set of NOP inst
@@ -222,12 +217,7 @@ private:
     std::unordered_map<const llvm::BasicBlock *, valueset_t> killed;
   };
 
-  std::vector<BasicBlockInfo> basicBlocks;
-  std::unordered_map<const llvm::BasicBlock *, std::size_t> basicBlockIndex;
-
-  inline BasicBlockInfo& getBasicBlockInfo(const llvm::BasicBlock *bb) {
-    return basicBlocks[basicBlockIndex[bb]];
-  }
+  std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> basicBlocks;
 
   void initializeWorklist(llvm::Function &F);
   void executeWorklistAlgorithm();
