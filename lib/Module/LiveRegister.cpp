@@ -170,7 +170,7 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
         Instruction *succTerm = succ->getTerminator();
         valueset_t &succTermLive = getInstructionInfo(succTerm).live;
         valueset_t succConsumed = setMinus(succFirstLive, succTermLive);
-        killed = setMinus(killed, consumed);
+        killed = setMinus(killed, succConsumed);
 
         // exclude registers that are being written to by PHI nodes in
         // succeeding basic block
