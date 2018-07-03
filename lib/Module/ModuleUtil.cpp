@@ -529,7 +529,11 @@ Function *klee::getDirectCallTarget(CallSite cs, bool moduleIsFullyLinked) {
 }
 
 static bool valueIsOnlyCalled(const Value *v) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+  for (Value::const_user_iterator it = v->user_begin(), ie = v->user_end();
+#else
   for (Value::const_use_iterator it = v->use_begin(), ie = v->use_end();
+#endif
        it != ie; ++it) {
     if (const Instruction *instr = dyn_cast<Instruction>(*it)) {
       if (instr->getOpcode()==0) continue; // XXX function numbering inst
