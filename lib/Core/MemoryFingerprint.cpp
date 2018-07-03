@@ -3,12 +3,16 @@
 #include "klee/Internal/Module/KModule.h"
 #include "klee/util/ExprPPrinter.h"
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3,5)
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/DebugLoc.h"
+#else
 #include "llvm/DebugInfo.h"
+#include "llvm/Support/DebugLoc.h"
+#endif
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/Support/DebugLoc.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace klee {
 

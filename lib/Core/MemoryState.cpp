@@ -451,7 +451,11 @@ void MemoryState::updateBasicBlockInfo(const llvm::BasicBlock *bb) {
   const llvm::Instruction *term = bb->getTerminator();
   if (llvm::MDNode *liveRegisters = term->getMetadata("liveregister.live")) {
     for (std::size_t i = 0; i < liveRegisters->getNumOperands(); ++i) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+      llvm::Value *live = cast<llvm::ValueAsMetadata>(liveRegisters->getOperand(i))->getValue();
+#else
       llvm::Value *live = liveRegisters->getOperand(i);
+#endif
       basicBlockInfo.liveRegisters.push_back(live);
     }
   }
@@ -470,7 +474,11 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
     return;
 
   for (std::size_t i = 0; i < consumedRegisters->getNumOperands(); ++i) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    llvm::Value *consumed = cast<llvm::ValueAsMetadata>(consumedRegisters->getOperand(i))->getValue();
+#else
     llvm::Value *consumed = consumedRegisters->getOperand(i);
+#endif
     llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: Following variable (last written to "
@@ -588,6 +596,17 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
   //   +-- edge               +-- kills
 
   const llvm::Instruction *inst = src->getTerminator();
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+  const llvm::MDNode *edges = inst->getMetadata("liveregister.killed");
+  if (!edges && !isa<llvm::MDTuple>(edges))
+    return;
+
+  const llvm::MDTuple *edge = nullptr;
+  const llvm::BasicBlock *bb = nullptr;
+  for (const auto &it : edges->operands()) {
+    edge = dyn_cast<llvm::MDTuple>(it);
+    if (edge != nullptr) {
+#else
   llvm::MDNode *edges = inst->getMetadata("liveregister.killed");
   if (!edges)
     return;
@@ -596,10 +615,17 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
   for (std::size_t i = 0; i < edges->getNumOperands(); ++i) {
     llvm::Value *edgeValue = edges->getOperand(i);
     if ((edge = dyn_cast<llvm::MDNode>(edgeValue))) {
+#endif
       assert(edge->getNumOperands() == 2 &&
         "MemoryState: liveregister.killed metadata in wrong shape");
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+      const llvm::Constant *baConstant = cast<llvm::ConstantAsMetadata>(edge->getOperand(0))->getValue();
+      const llvm::BlockAddress *ba = cast<llvm::BlockAddress>(baConstant);
+      bb = ba->getBasicBlock();
+#else
       llvm::Value *bbValue = edge->getOperand(0);
       llvm::BasicBlock *bb = dyn_cast<llvm::BasicBlock>(bbValue);
+#endif
       assert(bb != nullptr && "MemoryState: liveregister.killed metadata"
         "does not reference valid basic block");
       if (bb != dst) {
@@ -617,13 +643,20 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
     return;
 
   // unregister and clear locals that are not live at the end of dst
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+  const llvm::MDNode *kills = cast<llvm::MDNode>(edge->getOperand(1));
+  for (const auto &it : kills->operands()) {
+    const llvm::Value *kill = cast<llvm::ValueAsMetadata>(it)->getValue();
+    const llvm::Instruction *inst = cast<llvm::Instruction>(kill);
+#else
   llvm::Value *killsValue = edge->getOperand(1);
   llvm::MDNode *killsNode = dyn_cast<llvm::MDNode>(killsValue);
   for (std::size_t j = 0; j < killsNode->getNumOperands(); ++j) {
     llvm::Value *kill = killsNode->getOperand(j);
     llvm::Instruction *inst = static_cast<llvm::Instruction *>(kill);
+#endif
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-      llvm::errs() << "MemoryState: Following variable (last written to "
+      llvm::errs() << "MemoryState: Following variable (last accessed "
                    << "in BasicBlock %" << src->getName()
                    << ") is dead in BasicBlock %" << dst->getName()
                    << " (after evaluation of PHI nodes, if any)"

@@ -23,8 +23,6 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/User.h"
 
-#include <algorithm>
-
 using namespace llvm;
 
 namespace klee {
@@ -106,7 +104,7 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(Function &F) {
       for (auto i = value->use_begin(), e = value->use_end(); i != e; ++i) {
         if (Instruction *inst = dyn_cast<Instruction>(*i)) {
           if (inst->getOpcode() == Instruction::PHI) {
-            // found usage of value in gen set by PHI node
+            // found usage (of value in gen set) by a PHI node
             termLive.insert(value);
             // we do only need to add each value once to the live set
             break;
@@ -204,16 +202,32 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     // Example:
     // (liveRegister1, liveRegister2, liveRegister3)
     valueset_t &termLive = *bbInfo.termLive;
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    SmallVector<Metadata *, 10> liveVec;
+    for (auto value : termLive) {
+      liveVec.push_back(ValueAsMetadata::get(value));
+    }
+    term->setMetadata("liveregister.live", MDTuple::get(ctx, liveVec));
+#else
     std::vector<Value *> liveVec(termLive.begin(), termLive.end());
     term->setMetadata("liveregister.live", MDNode::get(ctx, liveVec));
+#endif
 
     // attach to terminator instruction: "consumed" registers, i.e. registers
     // that are read for the last time within the basic block
     // Example:
     // (consumedRegister1, consumedRegister2, consumedRegister3)
     valueset_t &consumed = bbInfo.consumed;
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    SmallVector<Metadata *, 10> consumedVec;
+    for (auto value : consumed) {
+      consumedVec.push_back(ValueAsMetadata::get(value));
+    }
+    term->setMetadata("liveregister.consumed", MDTuple::get(ctx, consumedVec));
+#else
     std::vector<Value *> consumedVec(consumed.begin(), consumed.end());
     term->setMetadata("liveregister.consumed", MDNode::get(ctx, consumedVec));
+#endif
 
     // attach to terminator instruction: immediately killed registers for each
     // succeeding basic block, i.e. registers that are only used by specific
@@ -225,17 +239,39 @@ void LiveRegisterPass::attachAnalysisResultAsMetadata(Function &F) {
     //   (succeedingBasicBlock1, (killedRegister1, killedRegister2)),
     //   (succeedingBasicBlock2, (killedRegister3, killedRegister3))
     // )
+    // NOTE: From LLVM 3.6 on, we represent the succeeding basic block by its
+    //       BlockAddress. This is due to the fact that the function
+    //       ValueAsMetadata::get cannot handle BasicBlocks directly.
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    SmallVector<Metadata *, 10> k;
+#else
     std::vector<Value *> k;
+#endif
     for (auto it = succ_begin(&bb), e = succ_end(&bb); it != e; ++it) {
       BasicBlock *succ = *it;
 
       valueset_t &killed = bbInfo.killed[succ];
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+      SmallVector<Metadata *, 10> killedVec;
+      for (auto value : killed) {
+        killedVec.push_back(ValueAsMetadata::get(value));
+      }
+      Constant *blockaddr = BlockAddress::get(succ);
+      Metadata *tuple[2] = {ConstantAsMetadata::get(blockaddr),
+                            MDTuple::get(ctx, killedVec)};
+      k.push_back(MDTuple::get(ctx, tuple));
+#else
       std::vector<Value *> killedVec(killed.begin(), killed.end());
       std::vector<Value *> tuple = {succ, MDNode::get(ctx, killedVec)};
       k.push_back(MDNode::get(ctx, tuple));
+#endif
     }
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    term->setMetadata("liveregister.killed", MDTuple::get(ctx, k));
+#else
     term->setMetadata("liveregister.killed", MDNode::get(ctx, k));
+#endif
   }
 }
 
