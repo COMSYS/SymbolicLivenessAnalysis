@@ -75,6 +75,13 @@ Truncate memory trace (used for infinite loop detection) on every state fork (de
 ```
 Disable infinite loop detection optimzation that only starts searching for loops on basic blocks with at least two predecessors (default=false)
 
+## CAV 2018 Artifact Evaluation
+
+Along with submission to CAV 2018, we prepared an artifact for evaluation, which can be obtained through the following links:
+
+  * [Instructions](https://www.dropbox.com/s/xzg8vebwrgaic73/cav18-SymbolicLivenessAnalysis.txt?dl=0)
+  * [VM image (*.ova)](https://www.dropbox.com/s/q01nh5fvin79l0w/cav18-SymbolicLivenessAnalysis.ova?dl=0)
+
 ## Publication
 
 If you use any portion of Symbolic Liveness Analysis in your work, please cite the following paper:
@@ -83,8 +90,8 @@ If you use any portion of Symbolic Liveness Analysis in your work, please cite t
 
 BibTeX:
 ```
-@inproceedings {symboliclivenessanalysis,
-   author = {Schemmel, Daniel and B{\"{u}}ning, Julian and Dustmann, Oscar Soria and Noll, Thomas and Wehrle, Klaus},
+@inproceedings {SymbolicLivenessAnalysis,
+   author = {Schemmel, Daniel and B{\"{u}}ning, Julian and Soria Dustmann, Oscar and Noll, Thomas and Wehrle, Klaus},
    title = {{Symbolic Liveness Analysis of Real-World Software}},
    booktitle = {Proceedings of the 30th International Conference on Computer Aided Verification (CAV'18)},
    year = {2018},
