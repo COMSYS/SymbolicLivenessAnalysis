@@ -1362,7 +1362,7 @@ void Executor::executeCall(ExecutionState &state,
                            std::vector< ref<Expr> > &arguments) {
 
   if (DetectInfiniteLoops) {
-    state.memoryState.registerFunctionCall(kmodule, f, arguments);
+    state.memoryState.registerFunctionCall(kmodule.get(), f, arguments);
   }
 
   Instruction *i = ki->inst;
