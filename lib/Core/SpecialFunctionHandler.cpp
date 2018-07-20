@@ -174,18 +174,18 @@ int SpecialFunctionHandler::size() {
 SpecialFunctionHandler::SpecialFunctionHandler(Executor &_executor) 
   : executor(_executor) {}
 
-
-void SpecialFunctionHandler::prepare() {
+void SpecialFunctionHandler::prepare(
+    std::vector<const char *> &preservedFunctions) {
   unsigned N = size();
 
   for (unsigned i=0; i<N; ++i) {
     HandlerInfo &hi = handlerInfo[i];
     Function *f = executor.kmodule->module->getFunction(hi.name);
-    
+
     // No need to create if the function doesn't exist, since it cannot
     // be called in that case.
-  
     if (f && (!hi.doNotOverride || f->isDeclaration())) {
+      preservedFunctions.push_back(hi.name);
       // Make sure NoReturn attribute is set, for optimization and
       // coverage counting.
       if (hi.doesNotReturn)
@@ -241,9 +241,19 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
                                             ref<Expr> addressExpr) {
   ObjectPair op;
   addressExpr = executor.toUnique(state, addressExpr);
+  if (!isa<ConstantExpr>(addressExpr)) {
+    executor.terminateStateOnError(
+        state, "Symbolic string pointer passed to one of the klee_ functions",
+        Executor::TerminateReason::User);
+    return "";
+  }
   ref<ConstantExpr> address = cast<ConstantExpr>(addressExpr);
-  if (!state.addressSpace.resolveOne(address, op))
-    assert(0 && "XXX out of bounds / multiple resolution unhandled");
+  if (!state.addressSpace.resolveOne(address, op)) {
+    executor.terminateStateOnError(
+        state, "Invalid string pointer passed to one of the klee_ functions",
+        Executor::TerminateReason::User);
+    return "";
+  }
   bool res __attribute__ ((unused));
   assert(executor.solver->mustBeTrue(state, 
                                      EqExpr::create(address, 
@@ -347,7 +357,7 @@ void SpecialFunctionHandler::handleOpenMerge(ExecutionState &state,
   }
 
   state.openMergeStack.push_back(
-      ref<MergeHandler>(new MergeHandler(&executor)));
+      ref<MergeHandler>(new MergeHandler(&executor, &state)));
 
   if (DebugLogMerge)
     llvm::errs() << "open merge: " << &state << "\n";
@@ -370,6 +380,9 @@ void SpecialFunctionHandler::handleCloseMerge(ExecutionState &state,
     warning << &state << " ran into a close at " << i << " without a preceding open";
     klee_warning("%s", warning.str().c_str());
   } else {
+    assert(executor.inCloseMerge.find(&state) == executor.inCloseMerge.end() &&
+           "State cannot run into close_merge while being closed");
+    executor.inCloseMerge.insert(&state);
     state.openMergeStack.back()->addClosedState(&state, i);
     state.openMergeStack.pop_back();
   }
@@ -788,19 +801,13 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
                                                 std::vector<ref<Expr> > &arguments) {
   std::string name;
 
-  // FIXME: For backwards compatibility. We should eventually enforce the
-  // correct arguments and types.
-  switch (arguments.size()) {
-    case 2:
-      klee_warning("klee_make_symbolic: deprecated number of arguments (2 instead of 3)");
-      break;
-    case 3:
-      name = readStringAtAddress(state, arguments[2]);
-      break;
-    default:
-      executor.terminateStateOnError(state, "illegal number of arguments to klee_make_symbolic(void*, size_t, char*)", Executor::User);
-      return;
+  if (arguments.size() != 3) {
+    executor.terminateStateOnError(state, "Incorrect number of arguments to klee_make_symbolic(void*, size_t, char*)", Executor::User);
+    return;
   }
+
+  name = arguments[2]->isZero() ? "" : readStringAtAddress(state, arguments[2]);
+
   if (name.length() == 0) {
     name = "unnamed";
     klee_warning("klee_make_symbolic: renamed empty name to \"unnamed\"");

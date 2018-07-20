@@ -144,6 +144,9 @@ else()
 endif()
 
 
+# Reference specific library paths used during linking for install
+SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 ################################################################################
 # Add our CMake module directory to the list of module search directories
 ################################################################################
@@ -160,6 +163,7 @@ set(KLEE_COMPONENT_CXX_DEFINES "")
 set(KLEE_COMPONENT_CXX_FLAGS "")
 set(KLEE_SOLVER_LIBRARIES "")
 set(KLEE_COMPONENT_EXTRA_LIBRARIES "")
+
 
 ################################################################################
 # Assertions
@@ -182,10 +186,11 @@ option(KLEE_ENABLE_TIMESTAMP "Add timestamps to KLEE sources" OFF)
 # Include useful CMake functions
 ################################################################################
 include(GNUInstallDirs)
+include(CheckCXXSymbolExists)
 include(CheckIncludeFile)
 include(CheckIncludeFileCXX)
-include(CheckFunctionExists)
 include(CheckPrototypeDefinition)
+include(CMakePushCheckState)
 include("${CMAKE_SOURCE_DIR}/cmake/string_to_list.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/klee_component_add_cxx_flag.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/add_global_flag.cmake")
@@ -366,13 +371,15 @@ endif()
 ################################################################################
 # TCMalloc support
 ################################################################################
-OPTION(ENABLE_TCMALLOC "Enable TCMalloc support" OFF)
+OPTION(ENABLE_TCMALLOC "Enable TCMalloc support" ON)
 if (ENABLE_TCMALLOC)
   message(STATUS "TCMalloc support enabled")
   set(TCMALLOC_HEADER "gperftools/malloc_extension.h")
   find_path(TCMALLOC_INCLUDE_DIR "${TCMALLOC_HEADER}")
+  cmake_push_check_state()
   set(CMAKE_REQUIRED_INCLUDES "${TCMALLOC_INCLUDE_DIR}")
   check_include_file_cxx("${TCMALLOC_HEADER}" HAVE_GPERFTOOLS_MALLOC_EXTENSION_H)
+  cmake_pop_check_state()
   if (${HAVE_GPERFTOOLS_MALLOC_EXTENSION_H})
     find_library(TCMALLOC_LIBRARIES
       NAMES tcmalloc tcmalloc_minimal
@@ -383,6 +390,7 @@ if (ENABLE_TCMALLOC)
         "Found \"${TCMALLOC_HEADER}\" but could not find library")
     endif()
     list(APPEND KLEE_COMPONENT_EXTRA_LIBRARIES ${TCMALLOC_LIBRARIES})
+    list(APPEND KLEE_COMPONENT_EXTRA_INCLUDE_DIRS ${TCMALLOC_INCLUDE_DIR})
     if (("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang") OR ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU"))
       # TCMalloc's documentation says its safest to pass these flags when
       # building with gcc because gcc can optimize assuming its using its own
@@ -434,11 +442,9 @@ endif()
 ################################################################################
 # Miscellaneous header file detection
 ################################################################################
-check_function_exists(mallinfo HAVE_MALLINFO) # FIXME: should test CXX compiler not C
-check_function_exists(__ctype_b_loc HAVE_CTYPE_EXTERNALS) # FIXME: should test CXX compiler not C
-
-check_include_file_cxx(malloc/malloc.h HAVE_MALLOC_MALLOC_H)
-check_function_exists(malloc_zone_statistics HAVE_MALLOC_ZONE_STATISTICS)
+check_cxx_symbol_exists(__ctype_b_loc ctype.h HAVE_CTYPE_EXTERNALS)
+check_cxx_symbol_exists(mallinfo malloc.h HAVE_MALLINFO)
+check_cxx_symbol_exists(malloc_zone_statistics malloc/malloc.h HAVE_MALLOC_ZONE_STATISTICS)
 
 # FIXME: This is needed by the runtime not KLEE itself so we are testing the wrong
 # compiler.
@@ -628,6 +634,7 @@ include_directories("${CMAKE_SOURCE_DIR}/include")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(KLEE_UTILS_DIR ${CMAKE_SOURCE_DIR}/utils)
 
 
 ################################################################################
@@ -637,6 +644,7 @@ message(STATUS "KLEE_COMPONENT_EXTRA_INCLUDE_DIRS: '${KLEE_COMPONENT_EXTRA_INCLU
 message(STATUS "KLEE_COMPONENT_CXX_DEFINES: '${KLEE_COMPONENT_CXX_DEFINES}'")
 message(STATUS "KLEE_COMPONENT_CXX_FLAGS: '${KLEE_COMPONENT_CXX_FLAGS}'")
 message(STATUS "KLEE_COMPONENT_EXTRA_LIBRARIES: '${KLEE_COMPONENT_EXTRA_LIBRARIES}'")
+message(STATUS "KLEE_SOLVER_LIBRARIES: '${KLEE_SOLVER_LIBRARIES}'")
 
 ################################################################################
 # KLEE components

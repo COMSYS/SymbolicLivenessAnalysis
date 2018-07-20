@@ -51,22 +51,22 @@
 #include "klee/Internal/System/MemoryUsage.h"
 #include "klee/SolverStats.h"
 
-#include "llvm/IR/Function.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/TypeBuilder.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -326,8 +326,8 @@ const char *Executor::TerminateReasonNames[] = {
 };
 
 Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
-    InterpreterHandler *ih)
-    : Interpreter(opts), kmodule(0), interpreterHandler(ih), searcher(0),
+                   InterpreterHandler *ih)
+    : Interpreter(opts), interpreterHandler(ih), searcher(0),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
       pathWriter(0), symPathWriter(0), specialFunctionHandler(0),
       processTree(0), replayKTest(0), replayPath(0), usingSeeds(0),
@@ -357,6 +357,9 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
   memory = new MemoryManager(&arrayCache);
 
   initializeSearchOptions();
+
+  if (OnlyOutputStatesCoveringNew && !StatsTracker::useIStats())
+    klee_error("To use --only-output-states-covering-new, you need to enable --output-istats.");
 
   if (DebugPrintInstructions.isSet(FILE_ALL) ||
       DebugPrintInstructions.isSet(FILE_COMPACT) ||
@@ -494,22 +497,51 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
 
 }
 
+llvm::Module *
+Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
+                    const ModuleOptions &opts) {
+  assert(!kmodule && !modules.empty() &&
+         "can only register one module"); // XXX gross
 
-const Module *Executor::setModule(llvm::Module *module, 
-                                  const ModuleOptions &opts) {
-  assert(!kmodule && module && "can only register one module"); // XXX gross
-  
-  kmodule = new KModule(module);
+  kmodule = std::unique_ptr<KModule>(new KModule());
 
-  // Initialize the context.
-  DataLayout *TD = kmodule->targetData;
-  Context::initialize(TD->isLittleEndian(),
-                      (Expr::Width) TD->getPointerSizeInBits());
+  // Preparing the final module happens in multiple stages
 
+  // Link with KLEE intrinsics library before running any optimizations
+  SmallString<128> LibPath(opts.LibraryDir);
+  llvm::sys::path::append(LibPath, "libkleeRuntimeIntrinsic.bca");
+  std::string error;
+  if (!klee::loadFile(LibPath.str(), modules[0]->getContext(), modules,
+                      error)) {
+    klee_error("Could not load KLEE intrinsic file %s", LibPath.c_str());
+  }
+
+  // 1.) Link the modules together
+  while (kmodule->link(modules, opts.EntryPoint)) {
+    // 2.) Apply different instrumentation
+    kmodule->instrument(opts);
+  }
+
+  // 3.) Optimise and prepare for KLEE
+
+  // Create a list of functions that should be preserved if used
+  std::vector<const char *> preservedFunctions;
   specialFunctionHandler = new SpecialFunctionHandler(*this);
+  specialFunctionHandler->prepare(preservedFunctions);
 
-  specialFunctionHandler->prepare();
-  kmodule->prepare(opts, interpreterHandler);
+  preservedFunctions.push_back(opts.EntryPoint.c_str());
+
+  // Preserve the free-standing library calls
+  preservedFunctions.push_back("memset");
+  preservedFunctions.push_back("memcpy");
+  preservedFunctions.push_back("memcmp");
+  preservedFunctions.push_back("memmove");
+
+  kmodule->optimiseAndPrepare(opts, preservedFunctions);
+
+  // 4.) Manifest the module
+  kmodule->manifest(interpreterHandler, StatsTracker::useStatistics());
+
   specialFunctionHandler->bind();
 
   if (StatsTracker::useStatistics() || userSearcherRequiresMD2U()) {
@@ -518,8 +550,13 @@ const Module *Executor::setModule(llvm::Module *module,
                        interpreterHandler->getOutputFilename("assembly.ll"),
                        userSearcherRequiresMD2U());
   }
-  
-  return module;
+
+  // Initialize the context.
+  DataLayout *TD = kmodule->targetData.get();
+  Context::initialize(TD->isLittleEndian(),
+                      (Expr::Width)TD->getPointerSizeInBits());
+
+  return kmodule->module.get();
 }
 
 Executor::~Executor() {
@@ -529,7 +566,6 @@ Executor::~Executor() {
   delete specialFunctionHandler;
   delete statsTracker;
   delete solver;
-  delete kmodule;
   while(!timers.empty()) {
     delete timers.back();
     timers.pop_back();
@@ -552,7 +588,7 @@ Executor::~Executor() {
 void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
                                       const Constant *c, 
                                       unsigned offset) {
-  DataLayout *targetData = kmodule->targetData;
+  const auto targetData = kmodule->targetData.get();
   if (const ConstantVector *cp = dyn_cast<ConstantVector>(c)) {
     unsigned elementSize =
       targetData->getTypeStoreSize(cp->getType()->getElementType());
@@ -598,8 +634,8 @@ void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
 MemoryObject * Executor::addExternalObject(ExecutionState &state, 
                                            void *addr, unsigned size, 
                                            bool isReadOnly) {
-  MemoryObject *mo = memory->allocateFixed((uint64_t) (unsigned long) addr, 
-                                           size, 0, state.stack.size()-1);
+  auto mo = memory->allocateFixed(reinterpret_cast<std::uint64_t>(addr),
+                                  size, nullptr, state.stack.size()-1);
   ObjectState *os = bindObjectInState(state, mo, false);
   for(unsigned i = 0; i < size; i++)
     os->write8(i, ((uint8_t*)addr)[i]);
@@ -612,7 +648,7 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
 extern void *__dso_handle __attribute__ ((__weak__));
 
 void Executor::initializeGlobals(ExecutionState &state) {
-  Module *m = kmodule->module;
+  Module *m = kmodule->module.get();
 
   if (m->getModuleInlineAsm() != "")
     klee_warning("executable has module level assembly (ignoring)");
@@ -631,8 +667,8 @@ void Executor::initializeGlobals(ExecutionState &state) {
         !externalDispatcher->resolveSymbol(f->getName())) {
       addr = Expr::createPointer(0);
     } else {
-      addr = Expr::createPointer((unsigned long) (void*) f);
-      legalFunctions.insert((uint64_t) (unsigned long) (void*) f);
+      addr = Expr::createPointer(reinterpret_cast<std::uint64_t>(f));
+      legalFunctions.insert(reinterpret_cast<std::uint64_t>(f));
     }
     
     globalAddresses.insert(std::make_pair(f, addr));
@@ -1287,9 +1323,7 @@ void Executor::printDebugInstructions(ExecutionState &state) {
 
   if (!DebugPrintInstructions.isSet(STDERR_COMPACT) &&
       !DebugPrintInstructions.isSet(FILE_COMPACT)) {
-    (*stream) << "     ";
-    state.pc->printFileLine(*stream);
-    (*stream) << ":";
+    (*stream) << "     " << state.pc->getSourceLocation() << ":";
   }
 
   (*stream) << state.pc->info->assemblyLine;
@@ -1314,6 +1348,7 @@ void Executor::stepInstruction(ExecutionState &state) {
     statsTracker->stepInstruction(state);
 
   ++stats::instructions;
+  ++state.steppedInstructions;
   state.prevPC = state.pc;
   ++state.pc;
 
@@ -1580,9 +1615,8 @@ Function* Executor::getTargetFunction(Value *calledVal, ExecutionState &state) {
 #endif
       std::string alias = state.getFnAlias(gv->getName());
       if (alias != "") {
-        llvm::Module* currModule = kmodule->module;
         GlobalValue *old_gv = gv;
-        gv = currModule->getNamedValue(alias);
+        gv = kmodule->module->getNamedValue(alias);
         if (!gv) {
           klee_error("Function %s(), alias for %s not found!\n", alias.c_str(),
                      old_gv->getName().str().c_str());
@@ -1757,7 +1791,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       destinations.insert(d);
 
       // create address expression
-      const auto PE = Expr::createPointer((uint64_t) (unsigned long) (void *) d);
+      const auto PE = Expr::createPointer(reinterpret_cast<std::uint64_t>(d));
       ref<Expr> e = EqExpr::create(address, PE);
 
       // exclude address from errorCase
@@ -1933,7 +1967,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     Function *f = getTargetFunction(fp, state);
 
     // Skip debug intrinsics, we can't evaluate their metadata arguments.
-    if (f && isDebugIntrinsic(f, kmodule))
+    if (f && isDebugIntrinsic(f, kmodule.get()))
       break;
 
     if (isa<InlineAsm>(fp)) {
@@ -2007,7 +2041,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
             // Don't give warning on unique resolution
             if (res.second || !first)
-              klee_warning_once((void*) (unsigned long) addr, 
+              klee_warning_once(reinterpret_cast<void*>(addr),
                                 "resolved symbolic function pointer to: %s",
                                 f->getName().data());
 
@@ -2411,8 +2445,13 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         !fpWidthToSemantics(right->getWidth()))
       return terminateStateOnExecError(state, "Unsupported FRem operation");
     llvm::APFloat Res(*fpWidthToSemantics(left->getWidth()), left->getAPValue());
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+    Res.mod(
+        APFloat(*fpWidthToSemantics(right->getWidth()), right->getAPValue()));
+#else
     Res.mod(APFloat(*fpWidthToSemantics(right->getWidth()),right->getAPValue()),
             APFloat::rmNearestTiesToEven);
+#endif
     bindLocal(ki, state, ConstantExpr::alloc(Res.bitcastToAPInt()));
     break;
   }
@@ -2534,69 +2573,60 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     switch( fi->getPredicate() ) {
       // Predicates which only care about whether or not the operands are NaNs.
     case FCmpInst::FCMP_ORD:
-      Result = CmpRes != APFloat::cmpUnordered;
+      Result = (CmpRes != APFloat::cmpUnordered);
       break;
 
     case FCmpInst::FCMP_UNO:
-      Result = CmpRes == APFloat::cmpUnordered;
+      Result = (CmpRes == APFloat::cmpUnordered);
       break;
 
       // Ordered comparisons return false if either operand is NaN.  Unordered
       // comparisons return true if either operand is NaN.
     case FCmpInst::FCMP_UEQ:
-      if (CmpRes == APFloat::cmpUnordered) {
-        Result = true;
-        break;
-      }
+      Result = (CmpRes == APFloat::cmpUnordered || CmpRes == APFloat::cmpEqual);
+      break;
     case FCmpInst::FCMP_OEQ:
-      Result = CmpRes == APFloat::cmpEqual;
+      Result = (CmpRes != APFloat::cmpUnordered && CmpRes == APFloat::cmpEqual);
       break;
 
     case FCmpInst::FCMP_UGT:
-      if (CmpRes == APFloat::cmpUnordered) {
-        Result = true;
-        break;
-      }
+      Result = (CmpRes == APFloat::cmpUnordered || CmpRes == APFloat::cmpGreaterThan);
+      break;
     case FCmpInst::FCMP_OGT:
-      Result = CmpRes == APFloat::cmpGreaterThan;
+      Result = (CmpRes != APFloat::cmpUnordered && CmpRes == APFloat::cmpGreaterThan);
       break;
 
     case FCmpInst::FCMP_UGE:
-      if (CmpRes == APFloat::cmpUnordered) {
-        Result = true;
-        break;
-      }
+      Result = (CmpRes == APFloat::cmpUnordered || (CmpRes == APFloat::cmpGreaterThan || CmpRes == APFloat::cmpEqual));
+      break;
     case FCmpInst::FCMP_OGE:
-      Result = CmpRes == APFloat::cmpGreaterThan || CmpRes == APFloat::cmpEqual;
+      Result = (CmpRes != APFloat::cmpUnordered && (CmpRes == APFloat::cmpGreaterThan || CmpRes == APFloat::cmpEqual));
       break;
 
     case FCmpInst::FCMP_ULT:
-      if (CmpRes == APFloat::cmpUnordered) {
-        Result = true;
-        break;
-      }
+      Result = (CmpRes == APFloat::cmpUnordered || CmpRes == APFloat::cmpLessThan);
+      break;
     case FCmpInst::FCMP_OLT:
-      Result = CmpRes == APFloat::cmpLessThan;
+      Result = (CmpRes != APFloat::cmpUnordered && CmpRes == APFloat::cmpLessThan);
       break;
 
     case FCmpInst::FCMP_ULE:
-      if (CmpRes == APFloat::cmpUnordered) {
-        Result = true;
-        break;
-      }
+      Result = (CmpRes == APFloat::cmpUnordered || (CmpRes == APFloat::cmpLessThan || CmpRes == APFloat::cmpEqual));
+      break;
     case FCmpInst::FCMP_OLE:
-      Result = CmpRes == APFloat::cmpLessThan || CmpRes == APFloat::cmpEqual;
+      Result = (CmpRes != APFloat::cmpUnordered && (CmpRes == APFloat::cmpLessThan || CmpRes == APFloat::cmpEqual));
       break;
 
     case FCmpInst::FCMP_UNE:
-      Result = CmpRes == APFloat::cmpUnordered || CmpRes != APFloat::cmpEqual;
+      Result = (CmpRes == APFloat::cmpUnordered || CmpRes != APFloat::cmpEqual);
       break;
     case FCmpInst::FCMP_ONE:
-      Result = CmpRes != APFloat::cmpUnordered && CmpRes != APFloat::cmpEqual;
+      Result = (CmpRes != APFloat::cmpUnordered && CmpRes != APFloat::cmpEqual);
       break;
 
     default:
       assert(0 && "Invalid FCMP predicate!");
+      break;
     case FCmpInst::FCMP_FALSE:
       Result = false;
       break;
@@ -2805,14 +2835,14 @@ void Executor::bindInstructionConstants(KInstruction *KI) {
 }
 
 void Executor::bindModuleConstants() {
-  for (std::vector<KFunction*>::iterator it = kmodule->functions.begin(), 
-         ie = kmodule->functions.end(); it != ie; ++it) {
-    KFunction *kf = *it;
+  for (auto &kfp : kmodule->functions) {
+    KFunction *kf = kfp.get();
     for (unsigned i=0; i<kf->numInstructions; ++i)
       bindInstructionConstants(kf->instructions[i]);
   }
 
-  kmodule->constantTable = new Cell[kmodule->constants.size()];
+  kmodule->constantTable =
+      std::unique_ptr<Cell[]>(new Cell[kmodule->constants.size()]);
   for (unsigned i=0; i<kmodule->constants.size(); ++i) {
     Cell &c = kmodule->constantTable[i];
     c.value = evalConstant(kmodule->constants[i]);
@@ -3370,6 +3400,12 @@ void Executor::callExternalFunction(ExecutionState &state,
       assert(success && "FIXME: Unhandled solver failure");
       (void) success;
       ce->toMemory(&args[wordIndex]);
+      ObjectPair op;
+      // Checking to see if the argument is a pointer to something
+      if (ce->getWidth() == Context::get().getPointerWidth() &&
+          state.addressSpace.resolveOne(ce, op)) {
+        op.second->flushToConcreteStore(solver, state);
+      }
       wordIndex += (ce->getWidth()+63)/64;
     } else {
       ref<Expr> arg = toUnique(state, *ai);
@@ -3417,10 +3453,9 @@ void Executor::callExternalFunction(ExecutionState &state,
     for (unsigned i=0; i<arguments.size(); i++) {
       os << arguments[i];
       if (i != arguments.size()-1)
-	os << ", ";
+        os << ", ";
     }
-    os << ") at ";
-    state.pc->printFileLine(os);
+    os << ") at " << state.pc->getSourceLocation();
     
     if (AllExternalWarnings)
       klee_warning("%s", os.str().c_str());

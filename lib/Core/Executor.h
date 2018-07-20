@@ -86,6 +86,7 @@ class Executor : public Interpreter {
   friend class SpecialFunctionHandler;
   friend class StatsTracker;
   friend class MergeHandler;
+  friend class MergingSearcher;
 
 public:
   class Timer {
@@ -121,7 +122,7 @@ private:
 
   class TimerInfo;
 
-  KModule *kmodule;
+  std::unique_ptr<KModule> kmodule;
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
 
@@ -134,6 +135,16 @@ private:
   SpecialFunctionHandler *specialFunctionHandler;
   std::vector<TimerInfo*> timers;
   PTree *processTree;
+
+  /// Keeps track of all currently ongoing merges.
+  /// An ongoing merge is a set of states which branched from a single state
+  /// which ran into a klee_open_merge(), and not all states in the set have
+  /// reached the corresponding klee_close_merge() yet.
+  std::vector<MergeHandler *> mergeGroups;
+
+  /// ExecutionStates currently paused from scheduling because they are
+  /// waiting to be merged in a klee_close_merge instruction
+  std::set<ExecutionState *> inCloseMerge;
 
   /// Used to track states that have been added during the current
   /// instructions step. 
@@ -176,8 +187,10 @@ private:
   /// When non-null the bindings that will be used for calls to
   /// klee_make_symbolic in order replay.
   const struct KTest *replayKTest;
+
   /// When non-null a list of branch decisions to be used for replay.
   const std::vector<bool> *replayPath;
+
   /// The index into the current \ref replayKTest or \ref replayPath
   /// object.
   unsigned replayPosition;
@@ -481,67 +494,60 @@ public:
     return *interpreterHandler;
   }
 
-  virtual void setPathWriter(TreeStreamWriter *tsw) {
-    pathWriter = tsw;
-  }
-  virtual void setSymbolicPathWriter(TreeStreamWriter *tsw) {
+  void setPathWriter(TreeStreamWriter *tsw) override { pathWriter = tsw; }
+
+  void setSymbolicPathWriter(TreeStreamWriter *tsw) override {
     symPathWriter = tsw;
   }
 
-  virtual void setReplayKTest(const struct KTest *out) {
+  void setReplayKTest(const struct KTest *out) override {
     assert(!replayPath && "cannot replay both buffer and path");
     replayKTest = out;
     replayPosition = 0;
   }
 
-  virtual void setReplayPath(const std::vector<bool> *path) {
+  void setReplayPath(const std::vector<bool> *path) override {
     assert(!replayKTest && "cannot replay both buffer and path");
     replayPath = path;
     replayPosition = 0;
   }
 
-  virtual const llvm::Module *
-  setModule(llvm::Module *module, const ModuleOptions &opts);
+  llvm::Module *setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
+                          const ModuleOptions &opts) override;
 
-  virtual void useSeeds(const std::vector<struct KTest *> *seeds) { 
+  void useSeeds(const std::vector<struct KTest *> *seeds) override {
     usingSeeds = seeds;
   }
 
-  virtual void runFunctionAsMain(llvm::Function *f,
-                                 int argc,
-                                 char **argv,
-                                 char **envp);
+  void runFunctionAsMain(llvm::Function *f, int argc, char **argv,
+                         char **envp) override;
 
   /*** Runtime options ***/
-  
-  virtual void setHaltExecution(bool value) {
-    haltExecution = value;
-  }
 
-  virtual void setInhibitForking(bool value) {
-    inhibitForking = value;
-  }
+  void setHaltExecution(bool value) override { haltExecution = value; }
 
-  void prepareForEarlyExit();
+  void setInhibitForking(bool value) override { inhibitForking = value; }
+
+  void prepareForEarlyExit() override;
 
   /*** State accessor methods ***/
 
-  virtual unsigned getPathStreamID(const ExecutionState &state);
+  unsigned getPathStreamID(const ExecutionState &state) override;
 
-  virtual unsigned getSymbolicPathStreamID(const ExecutionState &state);
+  unsigned getSymbolicPathStreamID(const ExecutionState &state) override;
 
-  virtual void getConstraintLog(const ExecutionState &state,
-                                std::string &res,
-                                Interpreter::LogType logFormat = Interpreter::STP);
+  void getConstraintLog(const ExecutionState &state, std::string &res,
+                        Interpreter::LogType logFormat =
+                            Interpreter::STP) override;
 
-  virtual bool getSymbolicSolution(const ExecutionState &state, 
-                                   std::vector< 
-                                   std::pair<std::string,
-                                   std::vector<unsigned char> > >
-                                   &res);
+  bool getSymbolicSolution(
+      const ExecutionState &state,
+      std::vector<std::pair<std::string, std::vector<unsigned char>>> &res)
+      override;
 
-  virtual void getCoveredLines(const ExecutionState &state,
-                               std::map<const std::string*, std::set<unsigned> > &res);
+  void getCoveredLines(const ExecutionState &state,
+                       std::map<const std::string *, std::set<unsigned>> &res)
+      override;
 
   Expr::Width getWidthForLLVMType(llvm::Type *type) const;
   size_t getAllocationAlignment(const llvm::Value *allocSite) const;

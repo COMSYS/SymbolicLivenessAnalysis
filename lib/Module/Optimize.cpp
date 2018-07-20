@@ -35,6 +35,10 @@
 #include "llvm/Analysis/Verifier.h"
 #endif
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+#include "llvm/Analysis/GlobalsModRef.h"
+#endif
+
 using namespace llvm;
 
 // Don't verify at the end
@@ -102,7 +106,12 @@ static void AddStandardCompilePasses(klee::LegacyLLVMPassManagerTy &PM) {
   addPass(PM, createCFGSimplificationPass());    // Clean up after IPCP & DAE
 
   addPass(PM, createPruneEHPass());              // Remove dead EH info
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+  addPass(PM, createPostOrderFunctionAttrsPass());
+  addPass(PM, createReversePostOrderFunctionAttrsPass()); // Deduce function attrs
+#else
   addPass(PM, createFunctionAttrsPass());        // Deduce function attrs
+#endif
 
   if (!DisableInline)
     addPass(PM, createFunctionInliningPass());   // Inline small functions
@@ -144,7 +153,7 @@ static void AddStandardCompilePasses(klee::LegacyLLVMPassManagerTy &PM) {
 /// Optimize - Perform link time optimizations. This will run the scalar
 /// optimizations, any loaded plugin-optimization modules, and then the
 /// inter-procedural optimizations if applicable.
-void Optimize(Module *M, const std::string &EntryPoint) {
+void Optimize(Module *M, llvm::ArrayRef<const char *> preservedFunctions) {
 
   // Instantiate the pass manager to organize the passes.
   klee::LegacyLLVMPassManagerTy Passes;
@@ -154,7 +163,9 @@ void Optimize(Module *M, const std::string &EntryPoint) {
     Passes.add(createVerifierPass());
 
   // Add an appropriate DataLayout instance for this module...
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+  // LLVM 3.7+ doesn't have DataLayoutPass anymore.
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
   DataLayoutPass *dlpass = new DataLayoutPass();
   dlpass->doInitialization(*M);
   addPass(Passes, dlpass);
@@ -172,8 +183,7 @@ void Optimize(Module *M, const std::string &EntryPoint) {
     // for a main function.  If main is defined, mark all other functions
     // internal.
     if (!DisableInternalize) {
-      ModulePass *pass = createInternalizePass(
-          std::vector<const char *>(1, EntryPoint.c_str()));
+      ModulePass *pass = createInternalizePass(preservedFunctions);
       addPass(Passes, pass);
     }
 
@@ -215,8 +225,14 @@ void Optimize(Module *M, const std::string &EntryPoint) {
     addPass(Passes, createScalarReplAggregatesPass()); // Break up allocas
 
     // Run a few AA driven optimizations here and now, to cleanup the code.
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+    addPass(Passes, createPostOrderFunctionAttrsPass());
+    addPass(Passes, createReversePostOrderFunctionAttrsPass()); // Add nocapture
+    addPass(Passes, createGlobalsAAWrapperPass());   // IP alias analysis
+#else
     addPass(Passes, createFunctionAttrsPass());      // Add nocapture
     addPass(Passes, createGlobalsModRefPass());      // IP alias analysis
+#endif
 
     addPass(Passes, createLICMPass());               // Hoist loop invariants
     addPass(Passes, createGVNPass());                // Remove redundancies

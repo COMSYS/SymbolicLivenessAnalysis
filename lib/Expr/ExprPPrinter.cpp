@@ -389,7 +389,7 @@ public:
         // a declaration.
         if (PCMultibyteReads && e->getKind() == Expr::Concat) {
 	  const ReadExpr *base = hasOrderedReads(e, -1);
-	  int isLSB = (base != NULL);
+	  const bool isLSB = (base != nullptr);
 	  if (!isLSB)
 	    base = hasOrderedReads(e, 1);
 	  if (base) {

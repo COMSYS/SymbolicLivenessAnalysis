@@ -11,6 +11,8 @@ include $(LEVEL)/Makefile.cmake.bitcode.config
 
 DIRS += Intrinsic
 DIRS += klee-libc
+DIRS += FreeStanding
+
 ifneq ($(ENABLE_POSIX_RUNTIME),0)
 	DIRS += POSIX
 endif
