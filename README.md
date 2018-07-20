@@ -27,27 +27,15 @@ In addition, we identified a bug in the long decommissioned GNU regex, which is 
 
 ## Additional Requirements
 
-In addition to the usual requirements of KLEE, we use CryptoPP to generate BLAKE2b hashes. To compile our version of KLEE with CryptoPP, use
+In addition to the usual requirements of KLEE, we use CryptoPP (Version 7.0) to generate BLAKE2b hashes. If CMake does not find CryptoPP, it automatically switches to a SHA1 implementation included in this repository.
+
+If CryptoPP is located at a custom location on your system, you can use the following to tell CMake where to find it:
 
 ```
-cmake [...] -DCMAKE_CXX_FLAGS="-I/path/to/CryptoPP/include -lcryptopp -L/path/to/CryptoPP"
+cmake [...] -DCRYPTOPP_INCLUDE_DIRS="/path/to/CryptoPP/include" -DCRYPTOPP_LIBRARIES="/path/to/CryptoPP/libcryptopp.so"
 ```
 
-and make sure that KLEE can find the `libcryptopp.so` in the system's library path.
-
-If you do not want to use CryptoPP, you can switch to our own implementation of SHA1 included in this repository by changing
-
-```
-// Set default implementation
-using MemoryFingerprint = MemoryFingerprint_CryptoPP_BLAKE2b;
-```
-to
-```
-// Set default implementation
-using MemoryFingerprint = MemoryFingerprint_SHA1;
-```
-
-in `lib/Core/MemoryFingerprint.h`.
+In addition, make sure that KLEE can find the `libcryptopp.so` in the library path at runtime.
 
 For information on how to compile KLEE in general, please refer to README-CMake.md.
 

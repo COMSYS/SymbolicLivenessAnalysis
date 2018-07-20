@@ -318,12 +318,37 @@ if ((NOT ${ENABLE_Z3}) AND (NOT ${ENABLE_STP}) AND (NOT ${ENABLE_METASMT}))
     "\"-DENABLE_SOLVER_METASMT=ON\"")
 endif()
 
+################################################################################
+# Support for Blake2b (via CryptoPP)
+################################################################################
+find_package(CryptoPP)
+if (CRYPTOPP_FOUND)
+  set(ENABLE_CRYPTOPP_DEFAULT ON)
+else()
+  set(ENABLE_CRYPTOPP_DEFAULT OFF)
+endif()
+option(ENABLE_CRYPTOPP "Enable use of CryptoPP (for Blake2b based-fingerprints)" ${ENABLE_CRYPTOPP_DEFAULT})
+if (ENABLE_CRYPTOPP)
+  message(STATUS "CryptoPP support enabled")
+  if (CRYPTOPP_FOUND)
+    set(USE_CRYPTOPP 1) # for config.h
+    set(TARGET_LIBS ${TARGET_LIBS} cryptopp)
+    list(APPEND KLEE_COMPONENT_EXTRA_LIBRARIES ${CRYPTOPP_LIBRARIES})
+    list(APPEND KLEE_COMPONENT_EXTRA_INCLUDE_DIRS ${CRYPTOPP_INCLUDE_DIRS})
+  else()
+    message(FATAL_ERROR "ENABLE_CRYPTOPP is true but CryptoPP could not be found")
+  endif()
+else()
+  message(STATUS "CryptoPP support disabled")
+  unset(USE_CRYPTOPP) # for config.h
+endif()
+
 ###############################################################################
 # Exception handling
 ###############################################################################
 if (NOT LLVM_ENABLE_EH)
-  if (ENABLE_SOLVER_METASMT)
-    message(WARNING "Not disabling exceptions because metaSMT uses them")
+  if (ENABLE_SOLVER_METASMT OR USE_CRYPTOPP)
+    message(WARNING "Not disabling exceptions because metaSMT and CryptoPP use them")
   else()
     klee_component_add_cxx_flag("-fno-exceptions" REQUIRED)
   endif()
