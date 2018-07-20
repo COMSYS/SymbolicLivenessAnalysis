@@ -38,7 +38,7 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
     LLVMContext &ctx = bb.getContext();
-    bb.getInstList().insert(&*bb.begin(), createNopInstruction(ctx));
+    bb.getInstList().insert(bb.begin(), createNopInstruction(ctx));
   }
 
   initializeWorklist(F);
@@ -303,7 +303,7 @@ void LiveRegisterPass::generateInstructionInfo(Function &F) {
   // iterate over all basic blocks
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
     BasicBlock &bb = *it;
-    Instruction *previ = bb.begin();
+    Instruction *previ = &*bb.begin();
     // iterate over all instructions within a basic block
     for (BasicBlock::iterator it = bb.begin(), e = bb.end(); it != e; ++it) {
       Instruction *i = &*it;
