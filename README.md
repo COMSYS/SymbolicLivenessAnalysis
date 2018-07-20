@@ -25,9 +25,11 @@ In addition, we identified a bug in the long decommissioned GNU regex, which is 
 
   * GNU regex: [http://lists.gnu.org/archive/html/bug-gnu-utils/2018-04/msg00006.html](http://lists.gnu.org/archive/html/bug-gnu-utils/2018-04/msg00006.html)
 
-## Additional Requirements
+## Requirements
 
-In addition to the usual requirements of KLEE, we use CryptoPP (Version 7.0) to generate BLAKE2b hashes. If CMake does not find CryptoPP, it automatically switches to a SHA1 implementation included in this repository.
+We recommend to compile our version of KLEE against **LLVM 3.8.1**. For information on how to compile KLEE in general, please refer to README-CMake.md.
+
+In addition to the usual requirements of KLEE, we use CryptoPP (Version 7.0.0) to generate BLAKE2b hashes (for fingerprint creation). If CMake does not find CryptoPP, it automatically switches to a SHA1 implementation included in this repository.
 
 If CryptoPP is located at a custom location on your system, you can use the following to tell CMake where to find it:
 
@@ -35,9 +37,7 @@ If CryptoPP is located at a custom location on your system, you can use the foll
 cmake [...] -DCRYPTOPP_INCLUDE_DIRS="/path/to/CryptoPP/include" -DCRYPTOPP_LIBRARIES="/path/to/CryptoPP/libcryptopp.so"
 ```
 
-In addition, make sure that KLEE can find the `libcryptopp.so` in the library path at runtime.
-
-For information on how to compile KLEE in general, please refer to README-CMake.md.
+In addition, make sure that KLEE can find `libcryptopp.so` in the library path at runtime.
 
 ## Usage
 
