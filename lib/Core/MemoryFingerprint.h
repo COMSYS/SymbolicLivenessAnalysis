@@ -215,8 +215,8 @@ public:
 };
 
 class MemoryFingerprint_CryptoPP_SHA1 :
-public MemoryFingerprintT<MemoryFingerprint_CryptoPP_SHA1, CryptoPP::SHA::DIGESTSIZE> {
-friend class MemoryFingerprintT<MemoryFingerprint_CryptoPP_SHA1, CryptoPP::SHA::DIGESTSIZE>;
+public MemoryFingerprintT<MemoryFingerprint_CryptoPP_SHA1, CryptoPP::SHA1::DIGESTSIZE> {
+friend class MemoryFingerprintT<MemoryFingerprint_CryptoPP_SHA1, CryptoPP::SHA1::DIGESTSIZE>;
 private:
   CryptoPP::SHA1 sha1;
   void generateHash();
