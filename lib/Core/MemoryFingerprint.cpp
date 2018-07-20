@@ -219,13 +219,18 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
         llvm::Instruction *inst = reinterpret_cast<llvm::Instruction *>(ptr);
 
         llvm::DebugLoc dl = inst->getDebugLoc();
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+        auto filename = dl.get()->getFilename();
+#else
         llvm::BasicBlock *bb = inst->getParent();
         llvm::LLVMContext &ctx = bb->getContext();
         llvm::DIScope scope = llvm::DIScope(dl.getScope(ctx));
+        auto filename = scope.getFilename();
+#endif
 
         result << "Local: ";
         result << inst->getName();
-        result << " (" << scope.getFilename();
+        result << " (" << filename;
         result << ":" << dl.getLine();
         result << ")";
         std::getline(item, value);
