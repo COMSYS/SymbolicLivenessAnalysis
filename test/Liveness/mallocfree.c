@@ -14,28 +14,25 @@
 // RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O1.bc > %t-O1.log 2>&1
 // RUN: test -f %t-O1.klee-out/test000001.infty.err
 // RUN: cat %t-O1.log | FileCheck %s
-// RUN: cat %t-O1.log | FileCheck --check-prefix=CHECK-CORRECT-LOCATION %s
 // RUN: bash -c 'cat %t-O1.log | grep AB | wc -l | { read linecount; test $linecount == 1; }'
 
 // RUN: rm -rf %t-O2.klee-out
 // RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O2.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O2.bc > %t-O2.log 2>&1
 // RUN: test -f %t-O2.klee-out/test000001.infty.err
 // RUN: cat %t-O2.log | FileCheck %s
-// RUN: cat %t-O2.log | FileCheck --check-prefix=CHECK-CORRECT-LOCATION %s
 // RUN: bash -c 'cat %t-O2.log | grep AB | wc -l | { read linecount; test $linecount == 1; }'
 
 // RUN: rm -rf %t-O3.klee-out
 // RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O3.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O3.bc > %t-O3.log 2>&1
 // RUN: test -f %t-O3.klee-out/test000001.infty.err
 // RUN: cat %t-O3.log | FileCheck %s
-// RUN: cat %t-O3.log | FileCheck --check-prefix=CHECK-CORRECT-LOCATION %s
 // RUN: bash -c 'cat %t-O3.log | grep AB | wc -l | { read linecount; test $linecount == 1; }'
 
 #include <stdlib.h>
 #include <stdio.h>
 
 int main(int argc, char *argv[]) {
-  // CHECK: KLEE: ERROR: {{[^:]*}}/mallocfree.c:{{[0-9]+}}: infinite loop{{$}}
+  // CHECK: KLEE: ERROR: {{[^:]*}}/mallocfree.c:[[@LINE+1]]: infinite loop{{$}}
   while(1) {
     char *str = malloc(10 * sizeof(char));
     for(int i = 0; i < 2; i++) {
@@ -44,6 +41,5 @@ int main(int argc, char *argv[]) {
     str[2] = '\0';
     printf("%s\n", str);
     free(str);
-    // CHECK-CORRECT-LOCATION: KLEE: ERROR: {{[^:]*}}/mallocfree.c:[[@LINE+1]]: infinite loop{{$}}
   }
 }
