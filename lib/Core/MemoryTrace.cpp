@@ -129,7 +129,6 @@ bool MemoryTrace::findInfiniteLoopInFunction() {
       // iterate over all elements within the first stack frame (but the first)
       if (topEntry == *it) {
         // found an entry with same PC and fingerprint
-        dumpTrace();
         return true;
       }
     }
@@ -165,7 +164,6 @@ bool MemoryTrace::findInfiniteRecursion() {
       MemoryTraceEntry &stackFrame = trace.at(it->index);
       if (topStackFrameBase == stackFrame) {
         // PC and iterator are the same at stack frame base
-        dumpTrace();
         return true;
       }
     }
