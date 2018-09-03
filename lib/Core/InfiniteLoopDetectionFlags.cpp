@@ -20,8 +20,8 @@ llvm::cl::bits<DebugInfiniteLoopDetectionType> DebugInfiniteLoopDetection(
 
 llvm::cl::opt<bool> InfiniteLoopDetectionTruncateOnFork(
   "infinite-loop-detection-truncate-on-fork",
-  llvm::cl::desc("Truncate memory trace (used for infinite loop detection) on every state fork (default=false)"),
-  llvm::cl::init(false));
+  llvm::cl::desc("Truncate memory trace (used for infinite loop detection) on every state fork (default=true)"),
+  llvm::cl::init(true));
 
 llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt(
   "infinite-loop-detection-disable-two-predecessor-optimization",
