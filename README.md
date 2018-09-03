@@ -74,7 +74,7 @@ Along with submission to CAV 2018, we prepared an artifact for evaluation, which
 
 If you use any portion of Symbolic Liveness Analysis in your work, please cite the following paper:
 
-[1] Daniel Schemmel, Julian Büning, Oscar Soria Dustmann, Thomas Noll and Klaus Wehrle. *Symbolic Liveness Analysis of Real-World Software*. In Proceedings of the 30th International Conference on Computer Aided Verification (CAV'18), July 2018 (*accepted*)
+[1] [Daniel Schemmel, Julian Büning, Oscar Soria Dustmann, Thomas Noll and Klaus Wehrle. *Symbolic Liveness Analysis of Real-World Software*. In Proceedings of the 30th International Conference on Computer Aided Verification (CAV'18). Lecture Notes in Computer Science, vol 10982. Springer, Cham](https://link.springer.com/chapter/10.1007/978-3-319-96142-2_27)
 
 BibTeX:
 ```
@@ -82,7 +82,11 @@ BibTeX:
    author = {Schemmel, Daniel and B{\"{u}}ning, Julian and Soria Dustmann, Oscar and Noll, Thomas and Wehrle, Klaus},
    title = {{Symbolic Liveness Analysis of Real-World Software}},
    booktitle = {Proceedings of the 30th International Conference on Computer Aided Verification (CAV'18)},
-   year = {2018},
-   note = {to appear}
+   pages = {447--466},
+   series = {Lecture Notes in Computer Science},
+   volume = {10982},
+   publisher = {Springer},
+   address = {Cham},
+   year = {2018}
 }
 ```
