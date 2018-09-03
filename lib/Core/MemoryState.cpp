@@ -671,7 +671,7 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
 }
 
 KInstruction *MemoryState::getKInstruction(const llvm::BasicBlock* bb) {
-  KFunction *kf = executionState->stack.back().kf;
+  KFunction *kf = getKFunction(bb);
   unsigned entry = kf->basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)];
   return kf->instructions[entry];
 }
@@ -680,7 +680,7 @@ KInstruction *MemoryState::getKInstruction(const llvm::Instruction* inst) {
   // FIXME: ugly hack
   llvm::BasicBlock *bb = const_cast<llvm::BasicBlock *>(inst->getParent());
   if (bb != nullptr) {
-    KFunction *kf = executionState->stack.back().kf;
+    KFunction *kf = getKFunction(bb);
     if (kf != nullptr) {
       unsigned entry = kf->basicBlockEntry[bb];
       while ((entry + 1) < kf->numInstructions
@@ -692,6 +692,14 @@ KInstruction *MemoryState::getKInstruction(const llvm::Instruction* inst) {
     }
   }
   return nullptr;
+}
+
+KFunction *MemoryState::getKFunction(const llvm::BasicBlock *bb) {
+  llvm::Function *f = const_cast<llvm::Function *>(bb->getParent());
+  assert(f != nullptr && "failed to retrieve Function for BasicBlock");
+  KFunction *kf = kmodule->functionMap[f];
+  assert(kf != nullptr && "failed to retrieve KFunction");
+  return kf;
 }
 
 ref<Expr> MemoryState::getLocalValue(const KInstruction *kinst) {

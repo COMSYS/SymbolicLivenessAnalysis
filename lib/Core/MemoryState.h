@@ -91,6 +91,7 @@ private:
   void updateBasicBlockInfo(const llvm::BasicBlock *bb);
   KInstruction *getKInstruction(const llvm::BasicBlock* bb);
   KInstruction *getKInstruction(const llvm::Instruction* inst);
+  KFunction *getKFunction(const llvm::BasicBlock *bb);
   ref<Expr> getLocalValue(const KInstruction *kinst);
   ref<Expr> getLocalValue(const llvm::Instruction *inst);
   void clearLocal(const KInstruction *kinst);
