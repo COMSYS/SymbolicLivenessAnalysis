@@ -556,6 +556,8 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
   Context::initialize(TD->isLittleEndian(),
                       (Expr::Width)TD->getPointerSizeInBits());
 
+  MemoryState::setKModule(kmodule.get());
+
   return kmodule->module.get();
 }
 
@@ -1362,7 +1364,7 @@ void Executor::executeCall(ExecutionState &state,
                            std::vector< ref<Expr> > &arguments) {
 
   if (DetectInfiniteLoops) {
-    state.memoryState.registerFunctionCall(kmodule.get(), f, arguments);
+    state.memoryState.registerFunctionCall(f, arguments);
   }
 
   Instruction *i = ki->inst;

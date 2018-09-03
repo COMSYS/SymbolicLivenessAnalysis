@@ -61,13 +61,12 @@ private:
     std::vector<llvm::Value *> liveRegisters;
   } basicBlockInfo;
 
-  static KModule *listInitializedForKModule;
+  static KModule *kmodule;
   static std::vector<llvm::Function *> outputFunctionsWhitelist;
   static std::vector<llvm::Function *> inputFunctionsBlacklist;
   static std::vector<llvm::Function *> libraryFunctionsList;
   static std::vector<llvm::Function *> memoryFunctionsList;
 
-  static void initializeLists(KModule *kmodule);
   template <std::size_t array_size>
   static void initializeFunctionList(KModule *kmodule,
                                      const char* (& functions)[array_size],
@@ -185,8 +184,9 @@ public:
         + MemoryState::memoryFunctionsList.capacity();
   }
 
+  static void setKModule(KModule *kmodule);
 
-  void registerFunctionCall(KModule *kmodule, llvm::Function *f,
+  void registerFunctionCall(llvm::Function *f,
                             std::vector<ref<Expr>> &arguments);
   void registerFunctionRet(llvm::Function *f);
 

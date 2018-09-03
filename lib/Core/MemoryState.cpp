@@ -25,14 +25,14 @@
 
 namespace klee {
 
-KModule *MemoryState::listInitializedForKModule = nullptr;
+KModule *MemoryState::kmodule = nullptr;
 std::vector<llvm::Function *> MemoryState::outputFunctionsWhitelist;
 std::vector<llvm::Function *> MemoryState::inputFunctionsBlacklist;
 std::vector<llvm::Function *> MemoryState::libraryFunctionsList;
 std::vector<llvm::Function *> MemoryState::memoryFunctionsList;
 
-void MemoryState::initializeLists(KModule *kmodule) {
-  if (listInitializedForKModule != nullptr) return;
+void MemoryState::setKModule(KModule *_kmodule) {
+  if (kmodule != nullptr) return;
 
   // whitelist: output functions
   const char* outputFunctions[] = {
@@ -97,21 +97,21 @@ void MemoryState::initializeLists(KModule *kmodule) {
     "memset", "memcpy", "memmove", "wmemset", "wmemcpy", "wmemmove"
   };
 
-  initializeFunctionList(kmodule, outputFunctions, outputFunctionsWhitelist);
-  initializeFunctionList(kmodule, inputFunctions, inputFunctionsBlacklist);
-  initializeFunctionList(kmodule, libraryFunctions, libraryFunctionsList);
-  initializeFunctionList(kmodule, memoryFunctions, memoryFunctionsList);
+  initializeFunctionList(_kmodule, outputFunctions, outputFunctionsWhitelist);
+  initializeFunctionList(_kmodule, inputFunctions, inputFunctionsBlacklist);
+  initializeFunctionList(_kmodule, libraryFunctions, libraryFunctionsList);
+  initializeFunctionList(_kmodule, memoryFunctions, memoryFunctionsList);
 
-  listInitializedForKModule = kmodule;
+  kmodule = _kmodule;
 }
 
 template <std::size_t array_size>
-void MemoryState::initializeFunctionList(KModule *kmodule,
+void MemoryState::initializeFunctionList(KModule *_kmodule,
                                          const char* (& functions)[array_size],
                                          std::vector<llvm::Function *> &list) {
   std::vector<llvm::Function *> tmp;
   for (const char *name : functions) {
-    llvm::Function *f = kmodule->module->getFunction(name);
+    llvm::Function *f = _kmodule->module->getFunction(name);
     if (f == nullptr) {
       if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
         llvm::errs() << "MemoryState: could not find function in module: "
@@ -131,17 +131,13 @@ void MemoryState::initializeFunctionList(KModule *kmodule,
 
 
 
-void MemoryState::registerFunctionCall(KModule *kmodule, llvm::Function *f,
+void MemoryState::registerFunctionCall(llvm::Function *f,
                                        std::vector<ref<Expr>> &arguments) {
   if (globalDisableMemoryState) {
     // we only check for global disable and not for library or listed functions
     // as we assume that those will not call any input or output functions
     return;
   }
-
-  initializeLists(kmodule);
-  assert(listInitializedForKModule == kmodule && "can only handle one KModule");
-
 
   if (std::binary_search(inputFunctionsBlacklist.begin(),
                          inputFunctionsBlacklist.end(),
@@ -448,17 +444,10 @@ void MemoryState::updateBasicBlockInfo(const llvm::BasicBlock *bb) {
   basicBlockInfo.bb = bb;
   basicBlockInfo.liveRegisters.clear();
 
-  const llvm::Instruction *term = bb->getTerminator();
-  if (llvm::MDNode *liveRegisters = term->getMetadata("liveregister.live")) {
-    for (std::size_t i = 0; i < liveRegisters->getNumOperands(); ++i) {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-      llvm::Value *live = cast<llvm::ValueAsMetadata>(liveRegisters->getOperand(i))->getValue();
-#else
-      llvm::Value *live = liveRegisters->getOperand(i);
-#endif
-      basicBlockInfo.liveRegisters.push_back(live);
-    }
-  }
+  KFunction *kf = getKFunction(bb);
+  auto liveset = kf->basicBlockValueLivenessInfo.at(bb).getLiveValues();
+  basicBlockInfo.liveRegisters = std::vector<llvm::Value *>(liveset.begin(),
+                                                            liveset.end());
 }
 
 void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
@@ -468,18 +457,11 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
   // The parameter "writeToLocalDelta" can be set to false in order to omit
   // changes to a local delta that will be discarded immediately after.
 
-  const llvm::Instruction *ti = bb->getTerminator();
-  llvm::MDNode *consumedRegisters = ti->getMetadata("liveregister.consumed");
-  if (consumedRegisters == nullptr)
-    return;
+  KFunction *kf = getKFunction(bb);
+  auto consumed = kf->basicBlockValueLivenessInfo.at(bb).getConsumedValues();
 
-  for (std::size_t i = 0; i < consumedRegisters->getNumOperands(); ++i) {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-    llvm::Value *consumed = cast<llvm::ValueAsMetadata>(consumedRegisters->getOperand(i))->getValue();
-#else
-    llvm::Value *consumed = consumedRegisters->getOperand(i);
-#endif
-    llvm::Instruction *inst = static_cast<llvm::Instruction *>(consumed);
+  for (auto &c : consumed) {
+    llvm::Instruction *inst = static_cast<llvm::Instruction *>(c);
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: Following variable (last written to "
                    << "in BasicBlock %" << bb->getName()
@@ -585,76 +567,12 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
                                          const llvm::BasicBlock *src) {
   // kill registers based on outgoing edge (edge from src to dst)
 
-  // liveregister.killed:
-  //
-  // +-- edges
-  // |
-  // (
-  //   (succeedingBasicBlock1, (killedRegister1, killedRegister2)), // edge 1
-  //   (succeedingBasicBlock2, (killedRegister3, killedRegister4))  // edge 2
-  // ) |                      |
-  //   +-- edge               +-- kills
-
-  const llvm::Instruction *inst = src->getTerminator();
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-  const llvm::MDNode *edges = inst->getMetadata("liveregister.killed");
-  if (!edges && !isa<llvm::MDTuple>(edges))
-    return;
-
-  const llvm::MDTuple *edge = nullptr;
-  const llvm::BasicBlock *bb = nullptr;
-  for (const auto &it : edges->operands()) {
-    edge = dyn_cast<llvm::MDTuple>(it);
-    if (edge != nullptr) {
-#else
-  llvm::MDNode *edges = inst->getMetadata("liveregister.killed");
-  if (!edges)
-    return;
-
-  llvm::MDNode *edge = nullptr;
-  for (std::size_t i = 0; i < edges->getNumOperands(); ++i) {
-    llvm::Value *edgeValue = edges->getOperand(i);
-    if ((edge = dyn_cast<llvm::MDNode>(edgeValue))) {
-#endif
-      assert(edge->getNumOperands() == 2 &&
-        "MemoryState: liveregister.killed metadata in wrong shape");
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-      const llvm::Constant *baConstant = cast<llvm::ConstantAsMetadata>(edge->getOperand(0))->getValue();
-      const llvm::BlockAddress *ba = cast<llvm::BlockAddress>(baConstant);
-      bb = ba->getBasicBlock();
-#else
-      llvm::Value *bbValue = edge->getOperand(0);
-      llvm::BasicBlock *bb = dyn_cast<llvm::BasicBlock>(bbValue);
-#endif
-      assert(bb != nullptr && "MemoryState: liveregister.killed metadata"
-        "does not reference valid basic block");
-      if (bb != dst) {
-        // wrong edge: no evaluation of registers to kill, go to next edge
-        continue;
-      }
-
-      // correct edge was found, loop can be terminated
-      break;
-    }
-  }
-
-  // incoming edge was not found in metadata
-  if (edge == nullptr)
-    return;
+  KFunction *kf = getKFunction(src);
+  auto killed = kf->basicBlockValueLivenessInfo.at(src).getKilledValues(dst);
 
   // unregister and clear locals that are not live at the end of dst
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-  const llvm::MDNode *kills = cast<llvm::MDNode>(edge->getOperand(1));
-  for (const auto &it : kills->operands()) {
-    const llvm::Value *kill = cast<llvm::ValueAsMetadata>(it)->getValue();
-    const llvm::Instruction *inst = cast<llvm::Instruction>(kill);
-#else
-  llvm::Value *killsValue = edge->getOperand(1);
-  llvm::MDNode *killsNode = dyn_cast<llvm::MDNode>(killsValue);
-  for (std::size_t j = 0; j < killsNode->getNumOperands(); ++j) {
-    llvm::Value *kill = killsNode->getOperand(j);
-    llvm::Instruction *inst = static_cast<llvm::Instruction *>(kill);
-#endif
+  for (auto &k : killed) {
+    llvm::Instruction *inst = static_cast<llvm::Instruction *>(k);
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: Following variable (last accessed "
                    << "in BasicBlock %" << src->getName()

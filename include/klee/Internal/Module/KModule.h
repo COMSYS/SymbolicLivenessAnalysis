@@ -18,15 +18,18 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace llvm {
   class BasicBlock;
   class Constant;
+  class DataLayout;
   class Function;
   class Instruction;
   class Module;
-  class DataLayout;
+  class Value;
 }
 
 namespace klee {
@@ -38,6 +41,41 @@ namespace klee {
   struct KInstruction;
   class KModule;
   template<class T> class ref;
+
+  struct BasicBlockValueLivenessInfo {
+  private:
+
+    typedef std::unordered_set<llvm::Value *> valueset_t;
+
+    static valueset_t emptySet;
+
+    valueset_t liveValues;
+    valueset_t consumedValues;
+    std::unordered_map<const llvm::BasicBlock *, valueset_t> killedValues;
+
+  public:
+    BasicBlockValueLivenessInfo(valueset_t &live,
+                                valueset_t &consumed,
+                                std::unordered_map<const llvm::BasicBlock *,
+                                                   valueset_t> &killed) :
+      liveValues(live), consumedValues(consumed), killedValues (killed) { }
+
+    const valueset_t &getLiveValues() const {
+      return liveValues;
+    }
+
+    const valueset_t &getConsumedValues() const {
+      return consumedValues;
+    }
+
+    const valueset_t &getKilledValues(const llvm::BasicBlock *bb) const {
+      if (killedValues.find(bb) != killedValues.end()) {
+        return killedValues.at(bb);
+      } else {
+        return emptySet;
+      }
+    }
+  };
 
   struct KFunction {
     llvm::Function *function;
@@ -52,6 +90,9 @@ namespace klee {
     /// Whether instructions in this function should count as
     /// "coverable" for statistics and search heuristics.
     bool trackCoverage;
+
+    std::unordered_map<const llvm::BasicBlock *, BasicBlockValueLivenessInfo>
+    basicBlockValueLivenessInfo;
 
   public:
     explicit KFunction(llvm::Function*, KModule *);

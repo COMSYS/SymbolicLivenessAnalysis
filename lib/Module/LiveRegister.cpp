@@ -46,7 +46,8 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
   propagatePhiUseToLiveSet(F);
 
   computeBasicBlockInfo(F);
-  attachAnalysisResultAsMetadata(F);
+  if (annotate)
+    attachAnalysisResultAsMetadata(F);
 
   // remove nop instructions that were added in the initialization phase
   for (Function::iterator it = F.begin(), e = F.end(); it != e; ++it) {
@@ -55,8 +56,8 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
     nop.eraseFromParent();
   }
 
-  // function was modified (metadata was added)
-  return true;
+  // was function modified by attaching metadata?
+  return annotate;
 }
 
 void LiveRegisterPass::initializeWorklist(Function &F) {

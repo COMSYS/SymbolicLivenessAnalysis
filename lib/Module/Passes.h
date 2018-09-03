@@ -184,11 +184,14 @@ public:
 /// Attaches analysis information as metatdata to be processed by KLEE (outside
 /// of another pass).
 class LiveRegisterPass : public llvm::FunctionPass {
+private:
+  bool annotate;
+
 public:
   static char ID;
-  LiveRegisterPass() : FunctionPass(ID) {}
+  LiveRegisterPass(bool debug) : FunctionPass(ID), annotate(debug) {}
 
-  virtual bool runOnFunction(llvm::Function &F);
+  bool runOnFunction(llvm::Function &F) override;
 
 private:
   typedef std::pair<llvm::Instruction*, llvm::Instruction*> edge_t;
@@ -214,6 +217,15 @@ private:
 
   std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> basicBlocks;
 
+public:
+
+  const std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> &
+  getBasicBlockInfoMap() {
+    return basicBlocks;
+  }
+
+private:
+
   void initializeWorklist(llvm::Function &F);
   void executeWorklistAlgorithm();
   void propagatePhiUseToLiveSet(llvm::Function &F);
@@ -227,15 +239,6 @@ private:
   valueset_t transition(const llvm::Instruction *i, const valueset_t &set);
 
   llvm::Instruction *createNopInstruction(llvm::LLVMContext &ctx) const;
-
-  template<typename T>
-  bool subsetEquals(const std::unordered_set<T> &subset,
-                    const std::unordered_set<T> &set);
-
-  template<typename T>
-  std::unordered_set<T> setMinus(const std::unordered_set<T> &set,
-                                 const std::unordered_set<T> &minus);
-
 };
 
 } // namespace klee
