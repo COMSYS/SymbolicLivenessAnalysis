@@ -390,12 +390,12 @@ void MemoryState::registerLocal(const llvm::Instruction *inst, ref<Expr> value)
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
     // concrete value
     fingerprint.updateUint8(3);
-    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
+    fingerprint.updateUint64(reinterpret_cast<std::uintptr_t>(inst));
     fingerprint.updateConstantExpr(*constant);
   } else {
     // symbolic value
     fingerprint.updateUint8(4);
-    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(inst));
+    fingerprint.updateUint64(reinterpret_cast<std::uintptr_t>(inst));
     fingerprint.updateExpr(value);
   }
 
@@ -411,13 +411,13 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
   if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
     // concrete value
     fingerprint.updateUint8(5);
-    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
+    fingerprint.updateUint64(reinterpret_cast<std::uintptr_t>(kf));
     fingerprint.updateUint64(index);
     fingerprint.updateConstantExpr(*constant);
   } else {
     // symbolic value
     fingerprint.updateUint8(6);
-    fingerprint.updateUint64(reinterpret_cast<std::intptr_t>(kf));
+    fingerprint.updateUint64(reinterpret_cast<std::uintptr_t>(kf));
     fingerprint.updateUint64(index);
     fingerprint.updateExpr(value);
   }
@@ -426,7 +426,7 @@ void MemoryState::registerArgument(const KFunction *kf, unsigned index,
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: adding argument " << index << " to function "
-                 << reinterpret_cast<std::intptr_t>(kf) << ": "
+                 << reinterpret_cast<std::uintptr_t>(kf) << ": "
                  << ExprString(value) << "\n"
                  << " [fingerprint: " << fingerprint.getFingerprintAsString()
                  << "]\n";

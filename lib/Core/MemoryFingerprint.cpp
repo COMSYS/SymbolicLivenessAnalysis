@@ -214,7 +214,7 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
         break;
       case 3:
       case 4: {
-        std::intptr_t ptr;
+        std::uintptr_t ptr;
         std::string value;
 
         item >> ptr;
@@ -243,7 +243,7 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
       case 5:
       case 6: {
         result << "Argument: ";
-        std::intptr_t ptr;
+        std::uintptr_t ptr;
         std::size_t argumentIndex;
         std::uint64_t value;
 
