@@ -56,7 +56,7 @@ Log all MemoryState / MemoryTrace information to stderr
 ```
 -infinite-loop-detection-truncate-on-fork
 ```
-Truncate memory trace (used for infinite loop detection) on every state fork (default=false)
+Truncate memory trace (used for infinite loop detection) on every state fork (default=true)
 
 ```
 -infinite-loop-detection-disable-two-predecessor-optimization
