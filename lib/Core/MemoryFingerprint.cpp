@@ -222,7 +222,9 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
 
         llvm::DebugLoc dl = inst->getDebugLoc();
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-        auto filename = dl.get()->getFilename();
+        std::string filename = "";
+        if (dl)
+          filename = dl.get()->getFilename();
 #else
         llvm::BasicBlock *bb = inst->getParent();
         llvm::LLVMContext &ctx = bb->getContext();
@@ -232,9 +234,15 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
 
         result << "Local: ";
         result << inst->getName();
-        result << " (" << filename;
-        result << ":" << dl.getLine();
-        result << ")";
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+        if (dl) {
+#else
+        if (!dl.isUnknown()) {
+#endif
+          result << " (" << filename;
+          result << ":" << dl.getLine();
+          result << ")";
+        }
         std::getline(item, value);
         result << " =" << value;
         output = true;
