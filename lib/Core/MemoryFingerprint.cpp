@@ -192,21 +192,21 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
       case 2:
         if (showMemoryOperations) {
           std::uint64_t addr;
-
           item >> addr;
 
           result << "Write: ";
           result << addr;
-          result << " = ";
+          result << " =";
 
           if (id == 2) {
             std::string value;
-            item >> value;
-            result << value;
+            for (std::string line; std::getline(item, line); ) {
+              result << line;
+            }
           } else {
             unsigned value;
             item >> value;
-            result << value;
+            result << " " << value;
           }
           output = true;
         }
@@ -215,7 +215,6 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
       case 3:
       case 4: {
         std::uintptr_t ptr;
-        std::string value;
 
         item >> ptr;
         llvm::Instruction *inst = reinterpret_cast<llvm::Instruction *>(ptr);
@@ -243,8 +242,11 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
           result << ":" << dl.getLine();
           result << ")";
         }
-        std::getline(item, value);
-        result << " =" << value;
+        result << " =";
+
+        for (std::string line; std::getline(item, line); ) {
+          result << line;
+        }
         output = true;
         break;
       }
