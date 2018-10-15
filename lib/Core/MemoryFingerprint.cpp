@@ -260,20 +260,20 @@ std::string MemoryFingerprint_Dummy::toString_impl(MemoryFingerprintT::dummy_t f
       }
       case 5:
       case 6: {
-        result << "Argument: ";
         std::uintptr_t ptr;
         std::size_t argumentIndex;
-        std::uint64_t value;
 
         item >> ptr;
         KFunction *kf = reinterpret_cast<KFunction *>(ptr);
         item >> argumentIndex;
         std::size_t total = kf->function->arg_size();
-        item >> value;
+        result << "Argument: ";
         result << kf->function->getName() << "(";
         for (std::size_t i = 0; i < total; ++i) {
           if (argumentIndex == i) {
-            result << value;
+            for (std::string line; std::getline(item, line); ) {
+              result << line;
+            }
           } else {
             result << "?";
           }
