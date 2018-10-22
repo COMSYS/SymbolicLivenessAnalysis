@@ -13,6 +13,7 @@
 #include "llvm/IR/Function.h"
 
 #include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 namespace llvm {
@@ -58,7 +59,7 @@ private:
 
   struct basicBlockInfo {
     const llvm::BasicBlock *bb = nullptr;
-    std::vector<llvm::Value *> liveRegisters;
+    std::unordered_set<const llvm::Value *> liveRegisters;
   } basicBlockInfo;
 
   static KModule *kmodule;
