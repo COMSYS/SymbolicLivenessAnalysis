@@ -6,7 +6,7 @@
 # License. See LICENSE.TXT for details.
 #
 #===------------------------------------------------------------------------===#
-klee_add_component(kleeModule
+set(MODULE_CPP_FILES
   Checks.cpp
   InstructionInfoTable.cpp
   InstructionOperandTypeCheckPass.cpp
@@ -20,6 +20,10 @@ klee_add_component(kleeModule
   PhiCleaner.cpp
   RaiseAsm.cpp
   Scalarizer.cpp
+)
+
+klee_add_component(kleeModule
+  ${MODULE_CPP_FILES}
 )
 
 set(LLVM_COMPONENTS
@@ -44,4 +48,17 @@ target_link_libraries(kleeModule PRIVATE
   # `ModuleUtil.cpp` uses `klee::SpecialFunctionHandler` (in `kleeCore`) but
   # `kleeCore` uses `kleeModule`.
   kleeCore
+)
+
+
+# build single passes as shared objects for opt / systemtests
+set(LLVM_OPTIONAL_SOURCES
+  ${MODULE_CPP_FILES}
+)
+
+klee_add_llvm_loadable_module(LiveRegister
+  LiveRegister.cpp
+
+  PLUGIN_TOOL
+  opt
 )
