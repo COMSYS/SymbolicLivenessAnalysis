@@ -489,7 +489,7 @@ void MemoryState::unregisterConsumedLocals(const llvm::BasicBlock *bb,
   auto consumed = kf->basicBlockValueLivenessInfo.at(bb).getConsumedValues();
 
   for (auto &c : consumed) {
-    llvm::Instruction *inst = static_cast<llvm::Instruction *>(c);
+    const llvm::Instruction *inst = static_cast<const llvm::Instruction *>(c);
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: Following variable is dead"
               << " after transition from BasicBlock %" << bb->getName()
@@ -598,7 +598,7 @@ void MemoryState::unregisterKilledLocals(const llvm::BasicBlock *dst,
 
   // unregister and clear locals that are not live at the end of dst
   for (auto &k : killed) {
-    llvm::Instruction *inst = static_cast<llvm::Instruction *>(k);
+    const llvm::Instruction *inst = static_cast<const llvm::Instruction *>(k);
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: Following variable (last accessed "
                    << "in BasicBlock %" << src->getName()
