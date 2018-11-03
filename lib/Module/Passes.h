@@ -235,16 +235,6 @@ class LiveRegisterPass : public llvm::FunctionPass {
   std::unordered_map<const llvm::Instruction *, InstructionInfo> instructions;
   std::unordered_map<const llvm::BasicBlock *, valueset_t> basicBlocks;
 
-  struct BasicBlockInfo {
-    const llvm::Instruction *lastPHI = nullptr;
-    valueset_t *phiLive = nullptr; // InstructionInfo live set of lastPHI or NOP
-    valueset_t *termLive = nullptr; // InstructionInfo live set of terminator
-    valueset_t consumed;
-    std::unordered_map<const llvm::BasicBlock *, valueset_t> killed;
-  };
-
-  std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> basicBlockInfos;
-
 public:
   static char ID;
   LiveRegisterPass() : FunctionPass(ID) {}
@@ -256,17 +246,10 @@ public:
   const valueset_t *getLiveSet(const llvm::Instruction *inst) const;
   const valueset_t *getBasicBlockLiveSet(const llvm::BasicBlock *bb) const;
 
-  const std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> &
-  getBasicBlockInfoMap() {
-    return basicBlockInfos;
-  }
-
 private:
   void initializeWorklist(const llvm::Function &F);
   void executeWorklistAlgorithm();
   void propagatePhiUseToLiveSet(const llvm::Function &F);
-
-  void computeBasicBlockInfo(const llvm::Function &F);
 
   void generateInstructionInfo(const llvm::Function &F);
   void addPredecessors(std::vector<edge_t> &worklist,

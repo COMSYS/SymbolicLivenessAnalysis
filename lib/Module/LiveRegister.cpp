@@ -70,8 +70,6 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
   executeWorklistAlgorithm();
   propagatePhiUseToLiveSet(F);
 
-  computeBasicBlockInfo(F);
-
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     // remove NOP instructions that were added in the initialization phase
     // and store their liveSets in separate data structure
@@ -106,9 +104,6 @@ void LiveRegisterPass::print(raw_ostream &os, const Module *M) const {
   const Function &F = *this->F;
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     const BasicBlock &bb = *it;
-    const BasicBlockInfo &bbInfo = basicBlockInfos.at(&bb);
-    const valueset_t &termLive = *bbInfo.termLive;
-    const valueset_t &consumed = bbInfo.consumed;
 
     os << bb.getName() << ":";
     if (!isa<PHINode>(bb.front())) {
@@ -130,22 +125,6 @@ void LiveRegisterPass::print(raw_ostream &os, const Module *M) const {
         os << "\n";
       }
     }
-    os << "\n";
-
-    os << "  consumed after PHI nodes (if any): ";
-    printValuesAsSet(os, consumed);
-    os << "  live after terminator instruction: ";
-    printValuesAsSet(os, termLive);
-
-    for (auto it = succ_begin(&bb), ie = succ_end(&bb); it != ie; ++it) {
-      const BasicBlock &succ = **it;
-      const valueset_t &killed = bbInfo.killed.at(&succ);
-
-      os << "  killed on transition to " << succ.getName();
-      os << " (after PHI node processing): ";
-      printValuesAsSet(os, killed);
-    }
-
     os << "\n";
   }
 }
@@ -228,45 +207,11 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(const Function &F) {
   }
 }
 
-void LiveRegisterPass::computeBasicBlockInfo(const Function &F) {
-  for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
-    const BasicBlock &bb = *it;
-    BasicBlockInfo &bbInfo = basicBlockInfos[&bb];
-
-    // "lastPHI": last PHI node if any, otherwise NOP instruction
-    bbInfo.lastPHI = getLastPHIInstruction(bb);
-
-    // "phiLive": registers that are live after the last PHI node or NOP
-    // In other words: before first "real" instruction.
-    bbInfo.phiLive = &instructions[bbInfo.lastPHI].live;
-
-    // "termLive": registers that are live at the end of the BB
-    bbInfo.termLive = &instructions[bb.getTerminator()].live;
-
-    // "consumed": registers that are not read in any of BB's successors
-    // this can be values from previous BB but also ones written in PHI nodes
-    bbInfo.consumed = set_difference(*bbInfo.phiLive, *bbInfo.termLive);
-
-    for (auto it = pred_begin(&bb), ie = pred_end(&bb); it != ie; ++it) {
-      const BasicBlock &pred = **it;
-      BasicBlockInfo &predInfo = basicBlockInfos[&pred];
-      const Instruction *predTerm = pred.getTerminator();
-
-      // "killed": registers that are not used in `bb` succeeding `pred` after
-      // evaluation of PHI nodes, but may be live in other BBs succeeding `pred`
-      predInfo.killed[&bb] = set_difference(instructions[predTerm].live,
-                                            *bbInfo.phiLive);
-    }
-  }
-}
-
 void LiveRegisterPass::generateInstructionInfo(const Function &F) {
-  basicBlockInfos.reserve(F.size());
   std::size_t numInstructions = 0;
   // iterate over all basic blocks
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     const BasicBlock &bb = *it;
-    basicBlockInfos[&bb] = {};
     numInstructions += bb.size();
     instructions.reserve(numInstructions);
     // iterate over all instructions within a basic block
