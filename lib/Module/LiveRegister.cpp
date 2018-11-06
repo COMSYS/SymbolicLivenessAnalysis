@@ -19,7 +19,6 @@
 
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/User.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -27,11 +26,11 @@ using namespace llvm;
 
 namespace {
 
-template<typename T>
-void printValuesAsSet(raw_ostream &os, T &set) {
+template <typename T> void printValuesAsSet(raw_ostream &os, T &set) {
   auto values = std::vector<const Value *>(set.begin(), set.end());
   std::sort(values.begin(), values.end(), [](const Value *a, const Value *b) {
-    if (!a->hasName()) return false;
+    if (!a->hasName())
+      return false;
     if (b->hasName())
       return a->getName() < b->getName();
     return true;
@@ -57,7 +56,7 @@ void printValuesAsSet(raw_ostream &os, T &set) {
   os << "}\n";
 }
 
-}
+} // namespace
 
 namespace klee {
 
@@ -104,6 +103,60 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
 
 void LiveRegisterPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
+}
+
+void LiveRegisterPass::print(raw_ostream &os, const Module *M) const {
+  const Function &F = *this->F;
+  for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
+    const BasicBlock &bb = *it;
+    const BasicBlockInfo &bbInfo = basicBlocks.at(&bb);
+    const valueset_t &termLive = *bbInfo.termLive;
+    const valueset_t &consumed = bbInfo.consumed;
+
+    os << bb.getName() << ":\n";
+    for (auto it = bb.begin(), ie = bb.end(); it != ie; ++it) {
+      const Instruction &inst = *it;
+      os << inst;
+      const Instruction *lastPHI = getLastPHIInstruction(bb);
+      if (inst.getOpcode() != Instruction::PHI || lastPHI == &inst) {
+        os << " ; live = ";
+        const valueset_t &instLive = instructions.at(&inst).live;
+        printValuesAsSet(os, instLive);
+      } else {
+        os << "\n";
+      }
+    }
+    os << "\n";
+
+    os << "  consumed after PHI nodes (if any): ";
+    printValuesAsSet(os, consumed);
+    os << "  live after terminator instruction: ";
+    printValuesAsSet(os, termLive);
+
+    for (auto it = succ_begin(&bb), ie = succ_end(&bb); it != ie; ++it) {
+      const BasicBlock &succ = **it;
+      const valueset_t &killed = bbInfo.killed.at(&succ);
+
+      os << "  killed on transition to " << succ.getName();
+      os << " (after PHI node processing): ";
+      printValuesAsSet(os, killed);
+    }
+
+    os << "\n";
+  }
+}
+
+const LiveRegisterPass::valueset_t *
+LiveRegisterPass::getLiveSet(const llvm::Instruction *inst) const {
+  if (instructions.count(inst) == 0)
+    return nullptr;
+
+  const InstructionInfo &ii = instructions.at(inst);
+
+  if (!ii.isValidLiveSet)
+    return nullptr;
+
+  return &ii.live;
 }
 
 void LiveRegisterPass::initializeWorklist(const Function &F) {
@@ -165,28 +218,6 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(const Function &F) {
       }
     }
   }
-}
-
-const Instruction *LiveRegisterPass::getLastPHIInstruction(const BasicBlock &BB) {
-  auto it = BB.begin();
-  auto ie = BB.end();
-  bool firstIsPHI = (it->getOpcode() == Instruction::PHI);
-  if (std::next(it) == ie) {
-    // only one instruction in BB
-    assert(!firstIsPHI && "PHINode is not a terminator instruction");
-    return &*it;
-  }
-
-  bool secondIsPHI = (std::next(it)->getOpcode() == Instruction::PHI);
-  if (!firstIsPHI && secondIsPHI)
-    ++it; // skip NOP instruction (only if PHI nodes are available)
-
-  const Instruction *inst = &*it;
-  do {
-    inst = &*it;
-  } while (it != ie && (++it)->getOpcode() == Instruction::PHI);
-
-  return inst;
 }
 
 void LiveRegisterPass::computeBasicBlockInfo(const Function &F) {
@@ -282,8 +313,8 @@ void LiveRegisterPass::generateInstructionInfo(const Function &F) {
         const PHINode *phi = cast<PHINode>(i);
 
         // iterate over all incoming basic blocks
-        for (auto ib = phi->block_begin(), e = phi->block_end(); ib != e; ++ib)
-        {
+        for (auto ib = phi->block_begin(), ie = phi->block_end(); ib != ie;
+             ++ib) {
           const Value *value = phi->getIncomingValueForBlock(*ib);
           if (isa<Instruction>(value)) {
             const Instruction *incomingTerm = (*ib)->getTerminator();
@@ -305,46 +336,6 @@ void LiveRegisterPass::generateInstructionInfo(const Function &F) {
   }
 }
 
-void LiveRegisterPass::print(raw_ostream &os, const Module *M) const {
-  const Function &F = *this->F;
-  for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
-    const BasicBlock &bb = *it;
-    const BasicBlockInfo &bbInfo = basicBlocks.at(&bb);
-    const valueset_t &termLive = *bbInfo.termLive;
-    const valueset_t &consumed = bbInfo.consumed;
-
-    os << bb.getName() << ":\n";
-    for (auto it = bb.begin(), ie = bb.end(); it != ie; ++it) {
-      const Instruction &inst = *it;
-      os << inst;
-      if (inst.getOpcode() != Instruction::PHI || bbInfo.lastPHI == &inst) {
-        os << " ; live = ";
-        const valueset_t &instLive = instructions.at(&inst).live;
-        printValuesAsSet(os, instLive);
-      } else {
-        os << "\n";
-      }
-    }
-    os << "\n";
-
-    os << "  consumed after PHI nodes (if any): ";
-    printValuesAsSet(os, consumed);
-    os << "  live after terminator instruction: ";
-    printValuesAsSet(os, termLive);
-
-    for (auto it = succ_begin(&bb), ie = succ_end(&bb); it != ie; ++it) {
-      const BasicBlock &succ = **it;
-      const valueset_t &killed = bbInfo.killed.at(&succ);
-
-      os << "  killed on transition to " << succ.getName();
-      os << " (after PHI node processing): ";
-      printValuesAsSet(os, killed);
-    }
-
-    os << "\n";
-  }
-}
-
 void LiveRegisterPass::addPredecessors(std::vector<edge_t> &worklist,
                                        const Instruction *i) {
   std::vector<edge_t> &predEdges = instructions[i].predecessorEdges;
@@ -361,16 +352,38 @@ LiveRegisterPass::transition(const Instruction *i, const valueset_t &set) {
   return result;
 }
 
-void LiveRegisterPass::insertNopInstruction(BasicBlock &bb) {
-  LLVMContext &ctx = bb.getContext();
-  ConstantInt *zero = ConstantInt::get(ctx, APInt(1, 0, false));
-  Instruction *nop = BinaryOperator::Create(Instruction::BinaryOps::Or, zero, zero);
-  bb.getInstList().insert(bb.begin(), nop);
+const Instruction *
+LiveRegisterPass::getLastPHIInstruction(const BasicBlock &BB) {
+  auto it = BB.begin();
+  auto ie = BB.end();
+  bool firstIsPHI = (it->getOpcode() == Instruction::PHI);
+  if (std::next(it) == ie) {
+    // only one instruction in BB
+    assert(!firstIsPHI && "PHINode is not a terminator instruction");
+    return &*it;
+  }
+
+  bool secondIsPHI = (std::next(it)->getOpcode() == Instruction::PHI);
+  if (!firstIsPHI && secondIsPHI)
+    ++it; // skip NOP instruction (only if PHI nodes are available)
+
+  const Instruction *inst = &*it;
+  do {
+    inst = &*it;
+  } while (it != ie && (++it)->getOpcode() == Instruction::PHI);
+
+  return inst;
 }
 
+void LiveRegisterPass::insertNopInstruction(BasicBlock &bb) {
+  ConstantInt *zero = ConstantInt::get(bb.getContext(), APInt(1, 0, false));
+  Instruction *nop =
+      BinaryOperator::Create(Instruction::BinaryOps::Or, zero, zero);
+  bb.getInstList().insert(bb.begin(), nop);
+}
 
 char LiveRegisterPass::ID = 0;
 static RegisterPass<LiveRegisterPass> X("live-register", "Live Register Pass",
                                         false, false);
 
-}
+} // namespace klee
