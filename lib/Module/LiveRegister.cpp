@@ -21,6 +21,7 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/User.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -38,11 +39,19 @@ void printValuesAsSet(raw_ostream &os, T &set) {
   os << "{";
   bool first = true;
   for (const Value *value : values) {
-    os << (first ? "" : ", ");
-    if (value->hasName())
-      os << "%" << value->getName();
-    else
-      os << "unnamed";
+    os << (first ? "" : ", ") << '%';
+    if (value->hasName()) {
+      os << value->getName();
+    } else {
+      // extract slot number
+      std::string line;
+      raw_string_ostream sos(line);
+      sos << *value;
+      sos.flush();
+      std::size_t start = line.find("%") + 1;
+      std::size_t end = line.find(" ", start);
+      os << line.substr(start, end - start);
+    }
     first = false;
   }
   os << "}\n";
