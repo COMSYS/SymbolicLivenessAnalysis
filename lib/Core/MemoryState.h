@@ -174,14 +174,14 @@ public:
     return trace.getNumberOfEntriesInCurrentStackFrame();
   }
 
-  size_t getFunctionListsLength() const {
+  std::size_t getFunctionListsLength() const {
     return MemoryState::outputFunctionsWhitelist.size()
         + MemoryState::inputFunctionsBlacklist.size()
         + MemoryState::libraryFunctionsList.size()
         + MemoryState::memoryFunctionsList.size();
   }
 
-  size_t getFunctionListsCapacity() const {
+  std::size_t getFunctionListsCapacity() const {
     return MemoryState::outputFunctionsWhitelist.capacity()
         + MemoryState::inputFunctionsBlacklist.capacity()
         + MemoryState::libraryFunctionsList.capacity()
