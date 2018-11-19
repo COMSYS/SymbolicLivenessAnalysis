@@ -30,7 +30,7 @@ class MemoryFingerprint_Dummy;
 // Set default implementation
 using MemoryFingerprint = MemoryFingerprint_CryptoPP_BLAKE2b;
 
-template<typename Derived, size_t hashSize>
+template<typename Derived, std::size_t hashSize>
 class MemoryFingerprintT {
 
 protected:
