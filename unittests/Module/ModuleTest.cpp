@@ -81,7 +81,7 @@ TEST_F(LiveRegisterPassTest, GetLastPHI) {
       if (hasPHI) {
         // returns last PHI
         ASSERT_TRUE(lastPHI->getOpcode() == Instruction::PHI);
-        ASSERT_TRUE(lastPHI->getNextNode() == firstRealInst);
+        ASSERT_TRUE(&*std::next(lastPHI->getIterator()) == firstRealInst);
       } else {
         // returns firstRealInst (no NOP present)
         ASSERT_TRUE(lastPHI->getOpcode() != Instruction::PHI);
@@ -98,11 +98,11 @@ TEST_F(LiveRegisterPassTest, GetLastPHI) {
       if (hasPHI) {
         // returns last PHI after skipping NOP
         ASSERT_TRUE(lastPHI->getOpcode() == Instruction::PHI);
-        ASSERT_TRUE(lastPHI->getNextNode() == firstRealInst);
+        ASSERT_TRUE(&*std::next(lastPHI->getIterator()) == firstRealInst);
       } else {
         // returns NOP
         ASSERT_TRUE(lastPHI->getOpcode() != Instruction::PHI);
-        ASSERT_TRUE(lastPHI == firstRealInst->getPrevNode());
+        ASSERT_TRUE(lastPHI == &*std::prev(firstRealInst->getIterator()));
       }
     }
   }
@@ -127,7 +127,11 @@ TEST_F(LiveRegisterPassTest, GetLiveSet) {
     for (auto &i : bb) {
       auto liveSet = lrp.getLiveSet(&i);
       bool shouldBeValid = (i.getOpcode() != Instruction::PHI);
-      shouldBeValid |= (i.getNextNode() == firstRealInst);
+      auto nextIt = std::next(i.getIterator());
+      if (nextIt == bb.end())
+        shouldBeValid = true;
+      else
+        shouldBeValid |= (&*nextIt == firstRealInst);
 
       if (shouldBeValid) {
         ++validLiveSets;
