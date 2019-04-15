@@ -233,6 +233,7 @@ class LiveRegisterPass : public llvm::FunctionPass {
   llvm::Function *F = nullptr; // for print
   std::vector<edge_t> worklist;
   std::unordered_map<const llvm::Instruction *, InstructionInfo> instructions;
+  std::unordered_map<const llvm::BasicBlock *, valueset_t> basicBlocks;
 
   struct BasicBlockInfo {
     const llvm::Instruction *lastPHI = nullptr;
@@ -242,7 +243,7 @@ class LiveRegisterPass : public llvm::FunctionPass {
     std::unordered_map<const llvm::BasicBlock *, valueset_t> killed;
   };
 
-  std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> basicBlocks;
+  std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> basicBlockInfos;
 
 public:
   static char ID;
@@ -253,10 +254,11 @@ public:
   void print(llvm::raw_ostream &os, const llvm::Module *M) const override;
 
   const valueset_t *getLiveSet(const llvm::Instruction *inst) const;
+  const valueset_t *getBasicBlockLiveSet(const llvm::BasicBlock *bb) const;
 
   const std::unordered_map<const llvm::BasicBlock *, BasicBlockInfo> &
   getBasicBlockInfoMap() {
-    return basicBlocks;
+    return basicBlockInfos;
   }
 
 private:

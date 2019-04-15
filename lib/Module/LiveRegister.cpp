@@ -80,9 +80,12 @@ bool LiveRegisterPass::runOnFunction(Function &F) {
 
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     // remove NOP instructions that were added in the initialization phase
+    // and store their liveSets in separate data structure
     {
       BasicBlock &bb = *it;
       Instruction &nop = *bb.begin();
+      basicBlocks[&bb] = std::move(instructions[&nop].live);
+      instructions.erase(&nop);
       nop.eraseFromParent();
     }
 
@@ -109,7 +112,7 @@ void LiveRegisterPass::print(raw_ostream &os, const Module *M) const {
   const Function &F = *this->F;
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     const BasicBlock &bb = *it;
-    const BasicBlockInfo &bbInfo = basicBlocks.at(&bb);
+    const BasicBlockInfo &bbInfo = basicBlockInfos.at(&bb);
     const valueset_t &termLive = *bbInfo.termLive;
     const valueset_t &consumed = bbInfo.consumed;
 
@@ -157,6 +160,14 @@ LiveRegisterPass::getLiveSet(const llvm::Instruction *inst) const {
     return nullptr;
 
   return &ii.live;
+}
+
+const LiveRegisterPass::valueset_t *
+LiveRegisterPass::getBasicBlockLiveSet(const llvm::BasicBlock *bb) const {
+  if (basicBlocks.count(bb) == 0)
+    return nullptr;
+
+  return &basicBlocks.at(bb);
 }
 
 void LiveRegisterPass::initializeWorklist(const Function &F) {
@@ -223,7 +234,7 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(const Function &F) {
 void LiveRegisterPass::computeBasicBlockInfo(const Function &F) {
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     const BasicBlock &bb = *it;
-    BasicBlockInfo &bbInfo = basicBlocks[&bb];
+    BasicBlockInfo &bbInfo = basicBlockInfos[&bb];
 
     // "lastPHI": last PHI node if any, otherwise NOP instruction
     bbInfo.lastPHI = getLastPHIInstruction(bb);
@@ -241,7 +252,7 @@ void LiveRegisterPass::computeBasicBlockInfo(const Function &F) {
 
     for (auto it = pred_begin(&bb), ie = pred_end(&bb); it != ie; ++it) {
       const BasicBlock &pred = **it;
-      BasicBlockInfo &predInfo = basicBlocks[&pred];
+      BasicBlockInfo &predInfo = basicBlockInfos[&pred];
       const Instruction *predTerm = pred.getTerminator();
 
       // "killed": registers that are not used in `bb` succeeding `pred` after
@@ -253,12 +264,12 @@ void LiveRegisterPass::computeBasicBlockInfo(const Function &F) {
 }
 
 void LiveRegisterPass::generateInstructionInfo(const Function &F) {
-  basicBlocks.reserve(F.size());
+  basicBlockInfos.reserve(F.size());
   std::size_t numInstructions = 0;
   // iterate over all basic blocks
   for (auto it = F.begin(), ie = F.end(); it != ie; ++it) {
     const BasicBlock &bb = *it;
-    basicBlocks[&bb] = {};
+    basicBlockInfos[&bb] = {};
     numInstructions += bb.size();
     instructions.reserve(numInstructions);
     // iterate over all instructions within a basic block
