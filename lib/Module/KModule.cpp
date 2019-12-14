@@ -376,11 +376,10 @@ void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
           continue;
 
         std::vector<const KInstruction *> liveKInstSet;
-        liveKInstSet.reserve(set->size());
-
         for (const Value *liveValue : *set) {
           // convert Value* to KInstruction*
-          const auto *liveInst = cast<llvm::Instruction>(liveValue);
+          const auto *liveInst = dyn_cast<llvm::Instruction>(liveValue);
+          if (!liveInst) continue;
           const InstructionInfo &ii = infos->getInfo(*liveInst);
           const KInstruction *liveKInst = ii.getKInstruction();
           liveKInstSet.push_back(liveKInst);
