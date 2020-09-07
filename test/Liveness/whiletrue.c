@@ -4,19 +4,19 @@
 // RUN: %llvmgcc %s -emit-llvm -O3 -g -c -o %t-O3.bc
 
 // RUN: rm -rf %t-O0.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O0.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O0.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 -allocate-determ %t-O0.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O0.klee-out/test000001.infty.err
 
 // RUN: rm -rf %t-O1.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O1.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O1.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 -allocate-determ %t-O1.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O1.klee-out/test000001.infty.err
 
 // RUN: rm -rf %t-O2.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O2.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O2.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O2.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 -allocate-determ %t-O2.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O2.klee-out/test000001.infty.err
 
 // RUN: rm -rf %t-O3.klee-out
-// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O3.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ %t-O3.bc 2>&1 | FileCheck %s
+// RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O3.klee-out -detect-infinite-loops -stop-after-n-instructions=100000 -allocate-determ %t-O3.bc 2>&1 | FileCheck %s
 // RUN: test -f %t-O3.klee-out/test000001.infty.err
 
 int main(int argc, char *argv[]) {
