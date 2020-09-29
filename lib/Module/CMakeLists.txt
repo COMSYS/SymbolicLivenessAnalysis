@@ -59,6 +59,6 @@ set(LLVM_OPTIONAL_SOURCES
 klee_add_llvm_loadable_module(LiveRegister
   LiveRegister.cpp
 
-  PLUGIN_TOOL
-  opt
+  #  PLUGIN_TOOL
+  #  opt
 )
