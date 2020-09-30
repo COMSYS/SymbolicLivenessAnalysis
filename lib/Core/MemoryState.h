@@ -1,13 +1,13 @@
 #ifndef KLEE_MEMORYSTATE_H
 #define KLEE_MEMORYSTATE_H
 
-#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
+#include "klee/Support/InfiniteLoopDetectionFlags.h"
 
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Function.h"

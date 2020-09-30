@@ -9,8 +9,6 @@
 
 #define DEBUG_TYPE "KModule"
 
-#include "../Core/InfiniteLoopDetectionFlags.h"
-
 #include "Passes.h"
 
 #include "klee/Config/Version.h"
@@ -22,6 +20,7 @@
 #include "klee/Module/KModule.h"
 #include "klee/Support/Debug.h"
 #include "klee/Support/ErrorHandling.h"
+#include "klee/Support/InfiniteLoopDetectionFlags.h"
 #include "klee/Support/ModuleUtil.h"
 
 #if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)

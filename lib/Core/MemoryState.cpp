@@ -2,13 +2,13 @@
 
 #include "AddressSpace.h"
 #include "ExecutionState.h"
-#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 
 #include "klee/Module/Cell.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KModule.h"
 #include "klee/Support/ErrorHandling.h"
+#include "klee/Support/InfiniteLoopDetectionFlags.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/BasicBlock.h"

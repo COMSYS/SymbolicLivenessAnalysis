@@ -11,7 +11,6 @@
 
 #include "ExecutionState.h"
 #include "Executor.h"
-#include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 #include "MemoryManager.h"
 #include "MergeHandler.h"
@@ -23,6 +22,7 @@
 #include "klee/Solver/SolverCmdLine.h"
 #include "klee/Support/Debug.h"
 #include "klee/Support/ErrorHandling.h"
+#include "klee/Support/InfiniteLoopDetectionFlags.h"
 #include "klee/Support/OptionCategories.h"
 
 #include "llvm/ADT/Twine.h"
