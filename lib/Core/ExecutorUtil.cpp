@@ -7,30 +7,23 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Context.h"
 #include "Executor.h"
 
-#include "Context.h"
-
-#include "klee/Expr.h"
-#include "klee/Interpreter.h"
-#include "klee/Solver.h"
-
 #include "klee/Config/Version.h"
-#include "klee/Internal/Module/KModule.h"
-
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Core/Interpreter.h"
+#include "klee/Expr/Expr.h"
+#include "klee/Module/KModule.h"
+#include "klee/Solver/Solver.h"
+#include "klee/Support/ErrorHandling.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
-#include "llvm/Support/GetElementPtrTypeIterator.h"
-#else
-#include "llvm/IR/GetElementPtrTypeIterator.h"
-#endif
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
@@ -55,10 +48,18 @@ namespace klee {
       } else if (const ConstantFP *cf = dyn_cast<ConstantFP>(c)) {
         return ConstantExpr::alloc(cf->getValueAPF().bitcastToAPInt());
       } else if (const GlobalValue *gv = dyn_cast<GlobalValue>(c)) {
-        return globalAddresses.find(gv)->second;
+        auto it = globalAddresses.find(gv);
+        assert(it != globalAddresses.end());
+        return it->second;
       } else if (isa<ConstantPointerNull>(c)) {
         return Expr::createPointer(0);
       } else if (isa<UndefValue>(c) || isa<ConstantAggregateZero>(c)) {
+        if (getWidthForLLVMType(c->getType()) == 0) {
+          if (isa<llvm::LandingPadInst>(ki->inst)) {
+            klee_warning_once(0, "Using zero size array fix for landingpad instruction filter");
+            return ConstantExpr::create(0, 1);
+          }
+        }
         return ConstantExpr::create(0, getWidthForLLVMType(c->getType()));
       } else if (const ConstantDataSequential *cds =
                  dyn_cast<ConstantDataSequential>(c)) {
@@ -213,7 +214,11 @@ namespace klee {
           continue;
 
         // Handle a struct index, which adds its field offset to the pointer.
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+        if (auto STy = ii.getStructTypeOrNull()) {
+#else
         if (StructType *STy = dyn_cast<StructType>(*ii)) {
+#endif
           unsigned ElementIdx = indexOp->getZExtValue();
           const StructLayout *SL = kmodule->targetData->getStructLayout(STy);
           base = base->Add(

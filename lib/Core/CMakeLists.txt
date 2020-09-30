@@ -14,7 +14,6 @@ klee_add_component(kleeCore
   CoreStats.cpp
   ExecutionState.cpp
   Executor.cpp
-  ExecutorTimers.cpp
   ExecutorUtil.cpp
   ExternalDispatcher.cpp
   ImpliedValue.cpp
@@ -37,19 +36,14 @@ klee_add_component(kleeCore
 # kleeCore.
 set(LLVM_COMPONENTS
   core
+  executionengine
+  mcjit
+  native
   support
 )
 
-if ("${LLVM_PACKAGE_VERSION}" VERSION_EQUAL "3.6" OR
-    "${LLVM_PACKAGE_VERSION}" VERSION_GREATER "3.6")
-  list(APPEND LLVM_COMPONENTS mcjit executionengine native)
-else()
-  list(APPEND LLVM_COMPONENTS jit engine)
-endif()
-
-
 klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
-target_link_libraries(kleeCore PUBLIC ${LLVM_LIBS})
+target_link_libraries(kleeCore PUBLIC ${LLVM_LIBS} ${SQLITE3_LIBRARIES})
 target_link_libraries(kleeCore PRIVATE
   kleeBasic
   kleeModule

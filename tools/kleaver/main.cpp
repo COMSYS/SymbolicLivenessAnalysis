@@ -7,22 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "expr/Lexer.h"
-#include "expr/Parser.h"
-
 #include "klee/Config/Version.h"
-#include "klee/Constraints.h"
-#include "klee/Expr.h"
-#include "klee/ExprBuilder.h"
-#include "klee/Solver.h"
-#include "klee/SolverImpl.h"
-#include "klee/Statistics.h"
-#include "klee/CommandLine.h"
-#include "klee/Common.h"
-#include "klee/util/ExprPPrinter.h"
-#include "klee/util/ExprVisitor.h"
-#include "klee/util/ExprSMTLIBPrinter.h"
-#include "klee/Internal/Support/PrintVersion.h"
+#include "klee/Expr/Constraints.h"
+#include "klee/Expr/Expr.h"
+#include "klee/Expr/ExprBuilder.h"
+#include "klee/Expr/ExprPPrinter.h"
+#include "klee/Expr/ExprSMTLIBPrinter.h"
+#include "klee/Expr/ExprVisitor.h"
+#include "klee/Expr/Parser/Lexer.h"
+#include "klee/Expr/Parser/Parser.h"
+#include "klee/Solver/Common.h"
+#include "klee/Support/OptionCategories.h"
+#include "klee/Statistics/Statistics.h"
+#include "klee/Solver/Solver.h"
+#include "klee/Solver/SolverCmdLine.h"
+#include "klee/Solver/SolverImpl.h"
+#include "klee/Support/PrintVersion.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -36,80 +36,69 @@
 
 #include "llvm/Support/Signals.h"
 
-#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
-#include "llvm/ADT/OwningPtr.h"
-#include "llvm/Support/system_error.h"
-#endif
-
 using namespace llvm;
 using namespace klee;
 using namespace klee::expr;
 
 namespace {
-  llvm::cl::opt<std::string>
-  InputFile(llvm::cl::desc("<input query log>"), llvm::cl::Positional,
-            llvm::cl::init("-"));
+llvm::cl::opt<std::string> InputFile(llvm::cl::desc("<input query log>"),
+                                     llvm::cl::Positional, llvm::cl::init("-"),
+                                     llvm::cl::cat(klee::ExprCat));
 
-  enum ToolActions {
-    PrintTokens,
-    PrintAST,
-    PrintSMTLIBv2,
-    Evaluate
-  };
+enum ToolActions { PrintTokens, PrintAST, PrintSMTLIBv2, Evaluate };
 
-  static llvm::cl::opt<ToolActions> 
-  ToolAction(llvm::cl::desc("Tool actions:"),
-             llvm::cl::init(Evaluate),
-             llvm::cl::values(
-             clEnumValN(PrintTokens, "print-tokens",
-                        "Print tokens from the input file."),
-			clEnumValN(PrintSMTLIBv2, "print-smtlib",
-					   "Print parsed input file as SMT-LIBv2 query."),
-             clEnumValN(PrintAST, "print-ast",
-                        "Print parsed AST nodes from the input file."),
-             clEnumValN(Evaluate, "evaluate",
-                        "Print parsed AST nodes from the input file.")
-             KLEE_LLVM_CL_VAL_END));
+static llvm::cl::opt<ToolActions> ToolAction(
+    llvm::cl::desc("Tool actions:"), llvm::cl::init(Evaluate),
+    llvm::cl::values(clEnumValN(PrintTokens, "print-tokens",
+                                "Print tokens from the input file."),
+                     clEnumValN(PrintSMTLIBv2, "print-smtlib",
+                                "Print parsed input file as SMT-LIBv2 query."),
+                     clEnumValN(PrintAST, "print-ast",
+                                "Print parsed AST nodes from the input file."),
+                     clEnumValN(Evaluate, "evaluate",
+                                "Evaluate parsed AST nodes from the input file.")
+                         KLEE_LLVM_CL_VAL_END),
+    llvm::cl::cat(klee::SolvingCat));
 
+enum BuilderKinds {
+  DefaultBuilder,
+  ConstantFoldingBuilder,
+  SimplifyingBuilder
+};
 
-  enum BuilderKinds {
-    DefaultBuilder,
-    ConstantFoldingBuilder,
-    SimplifyingBuilder
-  };
+static llvm::cl::opt<BuilderKinds> BuilderKind(
+    "builder", llvm::cl::desc("Expression builder:"),
+    llvm::cl::init(DefaultBuilder),
+    llvm::cl::values(clEnumValN(DefaultBuilder, "default",
+                                "Default expression construction."),
+                     clEnumValN(ConstantFoldingBuilder, "constant-folding",
+                                "Fold constant expressions."),
+                     clEnumValN(SimplifyingBuilder, "simplify",
+                                "Fold constants and simplify expressions.")
+                         KLEE_LLVM_CL_VAL_END),
+    llvm::cl::cat(klee::ExprCat));
 
-  static llvm::cl::opt<BuilderKinds> 
-  BuilderKind("builder",
-              llvm::cl::desc("Expression builder:"),
-              llvm::cl::init(DefaultBuilder),
-              llvm::cl::values(
-              clEnumValN(DefaultBuilder, "default",
-                         "Default expression construction."),
-              clEnumValN(ConstantFoldingBuilder, "constant-folding",
-                         "Fold constant expressions."),
-              clEnumValN(SimplifyingBuilder, "simplify",
-                         "Fold constants and simplify expressions.")
-              KLEE_LLVM_CL_VAL_END));
+llvm::cl::opt<std::string> DirectoryToWriteQueryLogs(
+    "query-log-dir",
+    llvm::cl::desc(
+        "The folder to write query logs to (default=current directory)"),
+    llvm::cl::init("."), llvm::cl::cat(klee::ExprCat));
 
-
-  llvm::cl::opt<std::string> directoryToWriteQueryLogs("query-log-dir",llvm::cl::desc("The folder to write query logs to. Defaults is current working directory."),
-		                                               llvm::cl::init("."));
-
-  llvm::cl::opt<bool> ClearArrayAfterQuery(
-      "clear-array-decls-after-query",
-      llvm::cl::desc("We discard the previous array declarations after a query "
-                     "is performed. Default: false"),
-      llvm::cl::init(false));
-}
+llvm::cl::opt<bool> ClearArrayAfterQuery(
+    "clear-array-decls-after-query",
+    llvm::cl::desc("Discard the previous array declarations after a query "
+                   "is performed (default=false)"),
+    llvm::cl::init(false), llvm::cl::cat(klee::ExprCat));
+} // namespace
 
 static std::string getQueryLogPath(const char filename[])
 {
 	//check directoryToWriteLogs exists
 	struct stat s;
-	if( !(stat(directoryToWriteQueryLogs.c_str(),&s) == 0 && S_ISDIR(s.st_mode)) )
+	if( !(stat(DirectoryToWriteQueryLogs.c_str(),&s) == 0 && S_ISDIR(s.st_mode)) )
 	{
           llvm::errs() << "Directory to log queries \""
-                       << directoryToWriteQueryLogs << "\" does not exist!"
+                       << DirectoryToWriteQueryLogs << "\" does not exist!"
                        << "\n";
           exit(1);
         }
@@ -121,14 +110,14 @@ static std::string getQueryLogPath(const char filename[])
 	)
 	{
           llvm::errs() << "Directory to log queries \""
-                       << directoryToWriteQueryLogs << "\" is not writable!"
+                       << DirectoryToWriteQueryLogs << "\" is not writable!"
                        << "\n";
           exit(1);
         }
 
-	std::string path=directoryToWriteQueryLogs;
-	path+="/";
-	path+=filename;
+	std::string path = DirectoryToWriteQueryLogs;
+	path += "/";
+	path += filename;
 	return path;
 }
 
@@ -216,8 +205,9 @@ static bool EvaluateInputAST(const char *Filename,
   Solver *coreSolver = klee::createCoreSolver(CoreSolverToUse);
 
   if (CoreSolverToUse != DUMMY_SOLVER) {
-    if (0 != MaxCoreSolverTime) {
-      coreSolver->setCoreSolverTimeout(MaxCoreSolverTime);
+    const time::Span maxCoreSolverTime(MaxCoreSolverTime);
+    if (maxCoreSolverTime) {
+      coreSolver->setCoreSolverTimeout(maxCoreSolverTime);
     }
   }
 
@@ -237,7 +227,7 @@ static bool EvaluateInputAST(const char *Filename,
       assert("FIXME: Support counterexample query commands!");
       if (QC->Values.empty() && QC->Objects.empty()) {
         bool result;
-        if (S->mustBeTrue(Query(ConstraintManager(QC->Constraints), QC->Query),
+        if (S->mustBeTrue(Query(ConstraintSet(QC->Constraints), QC->Query),
                           result)) {
           llvm::outs() << (result ? "VALID" : "INVALID");
         } else {
@@ -253,8 +243,7 @@ static bool EvaluateInputAST(const char *Filename,
         assert(QC->Query->isFalse() &&
                "FIXME: Support counterexamples with non-trivial query!");
         ref<ConstantExpr> result;
-        if (S->getValue(Query(ConstraintManager(QC->Constraints), 
-                              QC->Values[0]),
+        if (S->getValue(Query(ConstraintSet(QC->Constraints), QC->Values[0]),
                         result)) {
           llvm::outs() << "INVALID\n";
           llvm::outs() << "\tExpr 0:\t" << result;
@@ -265,10 +254,10 @@ static bool EvaluateInputAST(const char *Filename,
         }
       } else {
         std::vector< std::vector<unsigned char> > result;
-        
-        if (S->getInitialValues(Query(ConstraintManager(QC->Constraints), 
-                                      QC->Query),
-                                QC->Objects, result)) {
+
+        if (S->getInitialValues(
+                Query(ConstraintSet(QC->Constraints), QC->Query), QC->Objects,
+                result)) {
           llvm::outs() << "INVALID\n";
 
           for (unsigned i = 0, e = result.size(); i != e; ++i) {
@@ -312,15 +301,15 @@ static bool EvaluateInputAST(const char *Filename,
   if (uint64_t queries = *theStatisticManager->getStatisticByName("Queries")) {
     llvm::outs()
       << "--\n"
-      << "total queries = " << queries << "\n"
-      << "total queries constructs = " 
-      << *theStatisticManager->getStatisticByName("QueriesConstructs") << "\n"
+      << "total queries = " << queries << '\n'
+      << "total query constructs = "
+      << *theStatisticManager->getStatisticByName("QueryConstructs") << '\n'
       << "valid queries = " 
-      << *theStatisticManager->getStatisticByName("QueriesValid") << "\n"
+      << *theStatisticManager->getStatisticByName("QueriesValid") << '\n'
       << "invalid queries = " 
-      << *theStatisticManager->getStatisticByName("QueriesInvalid") << "\n"
+      << *theStatisticManager->getStatisticByName("QueriesInvalid") << '\n'
       << "query cex = " 
-      << *theStatisticManager->getStatisticByName("QueriesCEX") << "\n";
+      << *theStatisticManager->getStatisticByName("QueriesCEX") << '\n';
   }
 
   return success;
@@ -374,9 +363,9 @@ static bool printInputAsSMTLIBv2(const char *Filename,
 			 * constraint in the constraint set is set to NULL and
 			 * will later cause a NULL pointer dereference.
 			 */
-			ConstraintManager constraintM(QC->Constraints);
-			Query query(constraintM,QC->Query);
-			printer.setQuery(query);
+                        ConstraintSet constraintM(QC->Constraints);
+                        Query query(constraintM, QC->Query);
+                        printer.setQuery(query);
 
 			if(!QC->Objects.empty())
 				printer.setArrayValuesToGet(QC->Objects);
@@ -398,22 +387,21 @@ static bool printInputAsSMTLIBv2(const char *Filename,
 }
 
 int main(int argc, char **argv) {
+
+  KCommandLine::HideOptions(llvm::cl::GeneralCategory);
+
   bool success = true;
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+#else
   llvm::sys::PrintStackTraceOnErrorSignal();
+#endif
   llvm::cl::SetVersionPrinter(klee::printVersion);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   std::string ErrorStr;
   
-#if LLVM_VERSION_CODE < LLVM_VERSION(3,5)
-  OwningPtr<MemoryBuffer> MB;
-  error_code ec=MemoryBuffer::getFileOrSTDIN(InputFile.c_str(), MB);
-  if (ec) {
-    llvm::errs() << argv[0] << ": error: " << ec.message() << "\n";
-    return 1;
-  }
-#else
   auto MBResult = MemoryBuffer::getFileOrSTDIN(InputFile.c_str());
   if (!MBResult) {
     llvm::errs() << argv[0] << ": error: " << MBResult.getError().message()
@@ -421,7 +409,6 @@ int main(int argc, char **argv) {
     return 1;
   }
   std::unique_ptr<MemoryBuffer> &MB = *MBResult;
-#endif
   
   ExprBuilder *Builder = 0;
   switch (BuilderKind) {

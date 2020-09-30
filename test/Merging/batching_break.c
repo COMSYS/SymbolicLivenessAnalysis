@@ -1,4 +1,4 @@
-// RUN: %llvmgcc -emit-llvm -g -c -o %t.bc %s
+// RUN: %clang -emit-llvm -g -c -o %t.bc %s
 // RUN: rm -rf %t.klee-out
 // RUN: %klee --output-dir=%t.klee-out --use-merge --debug-log-merge --search=nurs:covnew %t.bc 2>&1 | FileCheck %s
 
@@ -6,7 +6,7 @@
 // CHECK: close merge:
 // CHECK: KLEE: done: generated tests = 3{{$}}
 
-#include <klee/klee.h>
+#include "klee/klee.h"
 
 int main(int argc, char** args){
 

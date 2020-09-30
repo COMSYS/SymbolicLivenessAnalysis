@@ -20,7 +20,7 @@
 
 #include "klee/klee.h"
 
-#include "klee/Internal/ADT/KTest.h"
+#include "klee/ADT/KTest.h"
 
 static KTest *testData = 0;
 static unsigned testPosition = 0;
@@ -144,6 +144,10 @@ uintptr_t klee_choose(uintptr_t n) {
   if(x >= n)
     report_internal_error("klee_choose failure. max = %ld, got = %ld\n", n, x);
   return x;
+}
+
+unsigned klee_is_replay() {
+  return 1;
 }
 
 void klee_assume(uintptr_t x) {

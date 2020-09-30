@@ -7,22 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-/*
- * MetaSMTBuilder.h
- *
- *  Created on: 8 Aug 2012
- *      Author: hpalikar
- */
+#ifndef KLEE_METASMTBUILDER_H
+#define KLEE_METASMTBUILDER_H
 
-#ifndef METASMTBUILDER_H_
-#define METASMTBUILDER_H_
+#include "ConstantDivision.h"
 
 #include "klee/Config/config.h"
-#include "klee/Expr.h"
-#include "klee/util/ExprPPrinter.h"
-#include "klee/util/ArrayExprHash.h"
-#include "klee/util/ExprHashMap.h"
-#include "ConstantDivision.h"
+#include "klee/Expr/ArrayExprHash.h"
+#include "klee/Expr/Expr.h"
+#include "klee/Expr/ExprHashMap.h"
+#include "klee/Expr/ExprPPrinter.h"
 
 #ifdef ENABLE_METASMT
 
@@ -188,7 +182,7 @@ MetaSMTBuilder<SolverContext>::getArrayForUpdate(const Array *root,
     if (!hashed) {
       un_expr = evaluate(_solver,
                          metaSMT::logic::Array::store(
-                             getArrayForUpdate(root, un->next),
+                             getArrayForUpdate(root, un->next.get()),
                              construct(un->index, 0), construct(un->value, 0)));
       _arr_hash.hashUpdateNodeExpr(un, un_expr);
     }
@@ -686,10 +680,10 @@ MetaSMTBuilder<SolverContext>::constructActual(ref<Expr> e, int *width_out) {
     assert(re && re->updates.root);
     *width_out = re->updates.root->getRange();
     // FixMe call method of Array
-    res = evaluate(_solver,
-                   metaSMT::logic::Array::select(
-                       getArrayForUpdate(re->updates.root, re->updates.head),
-                       construct(re->index, 0)));
+    res = evaluate(_solver, metaSMT::logic::Array::select(
+                                getArrayForUpdate(re->updates.root,
+                                                  re->updates.head.get()),
+                                construct(re->index, 0)));
     break;
   }
 
@@ -1200,4 +1194,4 @@ MetaSMTBuilder<SolverContext>::constructActual(ref<Expr> e, int *width_out) {
 
 #endif /* ENABLE_METASMT */
 
-#endif /* METASMTBUILDER_H_ */
+#endif /* KLEE_METASMTBUILDER_H */

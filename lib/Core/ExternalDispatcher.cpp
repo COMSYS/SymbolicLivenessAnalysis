@@ -10,44 +10,35 @@
 #include "ExternalDispatcher.h"
 #include "klee/Config/Version.h"
 
+#if LLVM_VERSION_CODE < LLVM_VERSION(8, 0)
+#include "llvm/IR/CallSite.h"
+#endif
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-#include "llvm/ExecutionEngine/MCJIT.h"
-#else
-#include "llvm/ExecutionEngine/JIT.h"
-#endif
-
 #include "llvm/ExecutionEngine/GenericValue.h"
+#include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/raw_ostream.h"
-
 #include "llvm/Support/TargetSelect.h"
 
-#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
-#include "llvm/Support/CallSite.h"
-#else
-#include "llvm/IR/CallSite.h"
-#endif
-
-#include <setjmp.h>
-#include <signal.h>
+#include <csetjmp>
+#include <csignal>
 
 using namespace llvm;
 using namespace klee;
 
 /***/
 
-static jmp_buf escapeCallJmpBuf;
+static sigjmp_buf escapeCallJmpBuf;
 
 extern "C" {
 
 static void sigsegv_handler(int signal, siginfo_t *info, void *context) {
-  longjmp(escapeCallJmpBuf, 1);
+  siglongjmp(escapeCallJmpBuf, 1);
 }
 }
 
@@ -122,11 +113,6 @@ ExternalDispatcherImpl::ExternalDispatcherImpl(LLVMContext &ctx)
     : ctx(ctx), lastErrno(0) {
   std::string error;
   singleDispatchModule = new Module(getFreshModuleID(), ctx);
-#if LLVM_VERSION_CODE < LLVM_VERSION(3, 6)
-  // Use old JIT
-  executionEngine = ExecutionEngine::createJIT(singleDispatchModule, &error);
-#else
-  // Use MCJIT.
   // The MCJIT JITs whole modules at a time rather than individual functions
   // so we will let it manage the modules.
   // Note that we don't do anything with `singleDispatchModule`. This is just
@@ -136,7 +122,6 @@ ExternalDispatcherImpl::ExternalDispatcherImpl(LLVMContext &ctx)
                         .setErrorStr(&error)
                         .setEngineKind(EngineKind::JIT)
                         .create();
-#endif
 
   if (!executionEngine) {
     llvm::errs() << "unable to make jit: " << error << "\n";
@@ -146,10 +131,8 @@ ExternalDispatcherImpl::ExternalDispatcherImpl(LLVMContext &ctx)
   // If we have a native target, initialize it to ensure it is linked in and
   // usable by the JIT.
   llvm::InitializeNativeTarget();
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
   llvm::InitializeNativeTargetAsmParser();
   llvm::InitializeNativeTargetAsmPrinter();
-#endif
 
   // from ExecutionEngine::create
   if (executionEngine) {
@@ -197,21 +180,16 @@ bool ExternalDispatcherImpl::executeCall(Function *f, Instruction *i,
 #endif
 
   Module *dispatchModule = NULL;
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
   // The MCJIT generates whole modules at a time so for every call that we
   // haven't made before we need to create a new Module.
   dispatchModule = new Module(getFreshModuleID(), ctx);
-#else
-  dispatchModule = this->singleDispatchModule;
-#endif
   dispatcher = createDispatcher(f, i, dispatchModule);
   dispatchers.insert(std::make_pair(i, dispatcher));
 
-// Force the JIT execution engine to go ahead and build the function. This
-// ensures that any errors or assertions in the compilation process will
-// trigger crashes instead of being caught as aborts in the external
-// function.
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+  // Force the JIT execution engine to go ahead and build the function. This
+  // ensures that any errors or assertions in the compilation process will
+  // trigger crashes instead of being caught as aborts in the external
+  // function.
   if (dispatcher) {
     // The dispatchModule is now ready so tell MCJIT to generate the code for
     // it.
@@ -228,12 +206,6 @@ bool ExternalDispatcherImpl::executeCall(Function *f, Instruction *i,
     // MCJIT didn't take ownership of the module so delete it.
     delete dispatchModule;
   }
-#else
-  if (dispatcher) {
-    // Old JIT works on a function at a time so compile the function.
-    executionEngine->recompileAndRelinkFunction(dispatcher);
-  }
-#endif
   return runProtectedCall(dispatcher, args);
 }
 
@@ -249,13 +221,14 @@ bool ExternalDispatcherImpl::runProtectedCall(Function *f, uint64_t *args) {
   std::vector<GenericValue> gvArgs;
   gTheArgsP = args;
 
-  segvAction.sa_handler = 0;
-  memset(&segvAction.sa_mask, 0, sizeof(segvAction.sa_mask));
+  segvAction.sa_handler = nullptr;
+  sigemptyset(&(segvAction.sa_mask));
+  sigaddset(&(segvAction.sa_mask), SIGSEGV);
   segvAction.sa_flags = SA_SIGINFO;
   segvAction.sa_sigaction = ::sigsegv_handler;
   sigaction(SIGSEGV, &segvAction, &segvActionOld);
 
-  if (setjmp(escapeCallJmpBuf)) {
+  if (sigsetjmp(escapeCallJmpBuf, 1)) {
     res = false;
   } else {
     errno = lastErrno;
@@ -265,7 +238,7 @@ bool ExternalDispatcherImpl::runProtectedCall(Function *f, uint64_t *args) {
     res = true;
   }
 
-  sigaction(SIGSEGV, &segvActionOld, 0);
+  sigaction(SIGSEGV, &segvActionOld, nullptr);
   return res;
 }
 
@@ -285,12 +258,13 @@ Function *ExternalDispatcherImpl::createDispatcher(Function *target,
   if (!resolveSymbol(target->getName()))
     return 0;
 
-  CallSite cs;
-  if (inst->getOpcode() == Instruction::Call) {
-    cs = CallSite(cast<CallInst>(inst));
-  } else {
-    cs = CallSite(cast<InvokeInst>(inst));
-  }
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+  const CallBase &cs = cast<CallBase>(*inst);
+#else
+  const CallSite cs(inst->getOpcode() == Instruction::Call
+                        ? CallSite(cast<CallInst>(inst))
+                        : CallSite(cast<InvokeInst>(inst)));
+#endif
 
   Value **args = new Value *[cs.arg_size()];
 
@@ -321,15 +295,14 @@ Function *ExternalDispatcherImpl::createDispatcher(Function *target,
 
   // Each argument will be passed by writing it into gTheArgsP[i].
   unsigned i = 0, idx = 2;
-  for (CallSite::arg_iterator ai = cs.arg_begin(), ae = cs.arg_end(); ai != ae;
-       ++ai, ++i) {
+  for (auto ai = cs.arg_begin(), ae = cs.arg_end(); ai != ae; ++ai, ++i) {
     // Determine the type the argument will be passed as. This accommodates for
     // the corresponding code in Executor.cpp for handling calls to bitcasted
     // functions.
     auto argTy =
         (i < FTy->getNumParams() ? FTy->getParamType(i) : (*ai)->getType());
     auto argI64p =
-        Builder.CreateGEP(KLEE_LLVM_GEP_TYPE(nullptr) argI64s,
+        Builder.CreateGEP(nullptr, argI64s,
                           ConstantInt::get(Type::getInt32Ty(ctx), idx));
 
     auto argp = Builder.CreateBitCast(argI64p, PointerType::getUnqual(argTy));

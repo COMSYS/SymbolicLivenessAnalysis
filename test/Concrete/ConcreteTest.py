@@ -3,6 +3,7 @@
 from __future__ import print_function
 import argparse
 import os
+import platform
 import subprocess
 import sys
 import shutil
@@ -12,12 +13,17 @@ def testFile(name, klee_path, lli_path):
     baseName,ext = os.path.splitext(name)
     exeFile = 'Output/linked_%s.bc'%baseName
 
+    if platform.system() == 'FreeBSD':
+        make_prog = 'gmake'
+    else:
+        make_prog = 'make'
+
     print('-- building test bitcode --')
     if os.path.exists("Makefile.cmake.test"):
         # Prefer CMake generated make file
-        make_cmd = 'make -f Makefile.cmake.test %s 2>&1' % (exeFile,)
+        make_cmd = '%s -f Makefile.cmake.test %s 2>&1' % (make_prog, exeFile,)
     else:
-        make_cmd = 'make %s 2>&1' % (exeFile,)
+        make_cmd = '%s %s 2>&1' % (make_prog, exeFile,)
     print("EXECUTING: %s" % (make_cmd,))
     sys.stdout.flush()
     if os.system(make_cmd):
@@ -35,7 +41,7 @@ def testFile(name, klee_path, lli_path):
     klee_out_path = "Output/%s.klee-out" % (baseName,)
     if os.path.exists(klee_out_path):
         shutil.rmtree(klee_out_path)
-    klee_cmd = klee_path.split() + ['--output-dir=' + klee_out_path,  '--no-output', exeFile]
+    klee_cmd = klee_path.split() + ['--output-dir=' + klee_out_path,  '--write-no-tests', exeFile]
     print("EXECUTING: %s" % (klee_cmd,))
     sys.stdout.flush()
 

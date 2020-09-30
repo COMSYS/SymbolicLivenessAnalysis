@@ -1,11 +1,11 @@
-// RUN: %llvmgcc %s -emit-llvm -O0 -c -o %t.bc
+// RUN: %clang %s -emit-llvm %O0opt -c -g -o %t.bc
 // RUN: rm -rf %t.klee-out %t.klee-out-tmp
 // RUN: %gentmp %t.klee-out-tmp
-// RUN: %klee --output-dir=%t.klee-out --run-in=%t.klee-out-tmp --search=random-state --libc=uclibc --posix-runtime --exit-on-error %t.bc --sym-files 1 1 > %t1.log
-// RUN: %llvmgcc -D_FILE_OFFSET_BITS=64 %s -emit-llvm -O0 -c -o %t.bc
+// RUN: %klee --output-dir=%t.klee-out --run-in-dir=%t.klee-out-tmp --search=random-state --libc=uclibc --posix-runtime --exit-on-error %t.bc --sym-files 1 1 > %t1.log
+// RUN: %clang -D_FILE_OFFSET_BITS=64 %s -emit-llvm %O0opt -c -g  -o %t.bc
 // RUN: rm -rf %t.klee-out %t.klee-out-tmp
 // RUN: %gentmp %t.klee-out-tmp
-// RUN: %klee --output-dir=%t.klee-out --run-in=%t.klee-out-tmp --search=random-state --libc=uclibc --posix-runtime --exit-on-error %t.bc --sym-files 1 1 > %t2.log
+// RUN: %klee --output-dir=%t.klee-out --run-in-dir=%t.klee-out-tmp --search=random-state --libc=uclibc --posix-runtime --exit-on-error %t.bc --sym-files 1 1 > %t2.log
 // RUN: sort %t1.log %t2.log | uniq -c > %t3.log
 // RUN: grep -q "4 COUNT" %t3.log
 
@@ -19,12 +19,16 @@
 // demand of /tmp.
 
 #define _LARGEFILE64_SOURCE
+
+#include "klee/klee.h"
+
 #include <assert.h>
+#include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <dirent.h>
+#include <string.h>
 #include <sys/stat.h>
-#include <errno.h>
 
 int main(int argc, char **argv) {
   struct stat s;
@@ -60,7 +64,7 @@ int main(int argc, char **argv) {
 
   // Ensure atomic write
   char buf[64];
-  sprintf(buf, "COUNT: %d\n", count);
+  snprintf(buf, sizeof(buf), "COUNT: %d\n", count);
   fputs(buf, stdout);
   assert(hasA == foundA);
 

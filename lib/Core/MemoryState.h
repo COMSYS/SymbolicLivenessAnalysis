@@ -6,8 +6,8 @@
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
+#include "klee/Module/KInstruction.h"
+#include "klee/Module/KModule.h"
 
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Function.h"

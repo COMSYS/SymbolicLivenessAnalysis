@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===*/
 
-#ifndef __KLEE_H__
-#define __KLEE_H__
+#ifndef KLEE_H
+#define KLEE_H
 
 #include "stdint.h"
 #include "stddef.h"
@@ -103,6 +103,12 @@ extern "C" {
   unsigned klee_is_symbolic(uintptr_t n);
 
 
+  /* Return true if replaying a concrete test case using the libkleeRuntime library
+   * Return false if executing symbolically in KLEE.
+   */
+  unsigned klee_is_replay();
+
+
   /* The following intrinsics are primarily intended for internal use
      and may have peculiar semantics. */
 
@@ -142,14 +148,6 @@ extern "C" {
   /* Enable/disable forking. */
   void klee_set_forking(unsigned enable);
 
-  /* klee_alias_function("foo", "bar") will replace, at runtime (on
-     the current path and all paths spawned on the current path), all
-     calls to foo() by calls to bar().  foo() and bar() have to exist
-     and have identical types.  Use klee_alias_function("foo", "foo")
-     to undo.  Be aware that some special functions, such as exit(),
-     may not always work. */
-  void klee_alias_function(const char* fn_name, const char* new_fn_name);
-
   /* Print stack trace. */
   void klee_stack_trace(void);
 
@@ -168,4 +166,4 @@ extern "C" {
 }
 #endif
 
-#endif /* __KLEE_H__ */
+#endif /* KLEE_H */

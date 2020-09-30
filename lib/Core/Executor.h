@@ -15,21 +15,27 @@
 #ifndef KLEE_EXECUTOR_H
 #define KLEE_EXECUTOR_H
 
-#include "klee/ExecutionState.h"
-#include "klee/Interpreter.h"
-#include "klee/Internal/Module/Cell.h"
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/util/ArrayCache.h"
-#include "llvm/Support/raw_ostream.h"
+#include "ExecutionState.h"
+#include "UserSearcher.h"
+
+#include "klee/ADT/RNG.h"
+#include "klee/Core/Interpreter.h"
+#include "klee/Expr/ArrayCache.h"
+#include "klee/Expr/ArrayExprOptimizer.h"
+#include "klee/Module/Cell.h"
+#include "klee/Module/KInstruction.h"
+#include "klee/Module/KModule.h"
+#include "klee/System/Time.h"
 
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <chrono>
-#include <vector>
-#include <string>
 #include <map>
+#include <memory>
 #include <set>
+#include <string>
+#include <vector>
 
 struct KTest;
 
@@ -71,6 +77,7 @@ namespace klee {
   class TimingSolver;
   class TreeStreamWriter;
   class MergeHandler;
+  class MergingSearcher;
   template<class T> class ref;
 
 
@@ -80,24 +87,14 @@ namespace klee {
   /// removedStates, and haltExecution, among others.
 
 class Executor : public Interpreter {
-  friend class RandomPathSearcher;
   friend class OwningSearcher;
   friend class WeightedRandomSearcher;
   friend class SpecialFunctionHandler;
   friend class StatsTracker;
   friend class MergeHandler;
-  friend class MergingSearcher;
+  friend klee::Searcher *klee::constructUserSearcher(Executor &executor);
 
 public:
-  class Timer {
-  public:
-    Timer();
-    virtual ~Timer();
-
-    /// The event callback.
-    virtual void run() = 0;
-  };
-
   typedef std::pair<ExecutionState*,ExecutionState*> StatePair;
 
   enum TerminateReason {
@@ -117,10 +114,11 @@ public:
     Unhandled
   };
 
+  /// The random number generator.
+  RNG theRNG;
+
 private:
   static const char *TerminateReasonNames[];
-
-  class TimerInfo;
 
   std::unique_ptr<KModule> kmodule;
   InterpreterHandler *interpreterHandler;
@@ -129,22 +127,12 @@ private:
   ExternalDispatcher *externalDispatcher;
   TimingSolver *solver;
   MemoryManager *memory;
-  std::set<ExecutionState*> states;
+  std::set<ExecutionState*, ExecutionStateIDCompare> states;
   StatsTracker *statsTracker;
   TreeStreamWriter *pathWriter, *symPathWriter;
   SpecialFunctionHandler *specialFunctionHandler;
-  std::vector<TimerInfo*> timers;
-  PTree *processTree;
-
-  /// Keeps track of all currently ongoing merges.
-  /// An ongoing merge is a set of states which branched from a single state
-  /// which ran into a klee_open_merge(), and not all states in the set have
-  /// reached the corresponding klee_close_merge() yet.
-  std::vector<MergeHandler *> mergeGroups;
-
-  /// ExecutionStates currently paused from scheduling because they are
-  /// waiting to be merged in a klee_close_merge instruction
-  std::set<ExecutionState *> inCloseMerge;
+  TimerGroup timers;
+  std::unique_ptr<PTree> processTree;
 
   /// Used to track states that have been added during the current
   /// instructions step. 
@@ -156,13 +144,6 @@ private:
   /// \invariant \ref removedStates is a subset of \ref states. 
   /// \invariant \ref addedStates and \ref removedStates are disjoint.
   std::vector<ExecutionState *> removedStates;
-
-  /// Used to track states that are not terminated, but should not
-  /// be scheduled by the searcher.
-  std::vector<ExecutionState *> pausedStates;
-  /// States that were 'paused' from scheduling, that now may be
-  /// scheduled again
-  std::vector<ExecutionState *> continuedStates;
 
   /// When non-empty the Executor is running in "seed" mode. The
   /// states in this map will be executed in an arbitrary order
@@ -216,13 +197,16 @@ private:
 
   /// The maximum time to allow for a single core solver query.
   /// (e.g. for a single STP query)
-  double coreSolverTimeout;
+  time::Span coreSolverTimeout;
+
+  /// Maximum time to allow for a single instruction.
+  time::Span maxInstructionTime;
 
   /// Assumes ownership of the created array objects
   ArrayCache arrayCache;
 
   /// File to print executed instructions to
-  llvm::raw_ostream *debugInstFile;
+  std::unique_ptr<llvm::raw_ostream> debugInstFile;
 
   // @brief Buffer used by logBuffer
   std::string debugBufferString;
@@ -233,19 +217,23 @@ private:
   // measure time to error since start of Executor
   std::chrono::steady_clock::time_point executorStartTime;
 
-  /// JSON file to print state info to
-  llvm::raw_ostream *statesJSONFile;
-
   /// JSON file to print state forking info to
   llvm::raw_ostream *forkJSONFile;
+
+  /// Optimizes expressions
+  ExprOptimizer optimizer;
+
+  /// Points to the merging searcher of the searcher chain,
+  /// `nullptr` if merging is disabled
+  MergingSearcher *mergingSearcher = nullptr;
+
+  /// JSON file to print state info to
+  llvm::raw_ostream *statesJSONFile;
 
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
   
   void executeInstruction(ExecutionState &state, KInstruction *ki);
-
-  void printFileLine(ExecutionState &state, KInstruction *ki,
-                     llvm::raw_ostream &file);
 
   void run(ExecutionState &initialState);
 
@@ -260,10 +248,14 @@ private:
   MemoryObject *addExternalObject(ExecutionState &state, void *addr, 
                                   unsigned size, bool isReadOnly);
 
+  void initializeGlobalAlias(const llvm::Constant *c);
   void initializeGlobalObject(ExecutionState &state, ObjectState *os, 
 			      const llvm::Constant *c,
 			      unsigned offset);
   void initializeGlobals(ExecutionState &state);
+  void allocateGlobalObjects(ExecutionState &state);
+  void initializeGlobalAliases();
+  void initializeGlobalObjects(ExecutionState &state);
 
   void stepInstruction(ExecutionState &state);
   void updateStates(ExecutionState *current);
@@ -312,12 +304,17 @@ private:
   /// done (realloc semantics). The initialized bytes will be the
   /// minimum of the size of the old and new objects, with remaining
   /// bytes initialized as specified by zeroMemory.
+  ///
+  /// \param allocationAlignment If non-zero, the given alignment is
+  /// used. Otherwise, the alignment is deduced via
+  /// Executor::getAllocationAlignment
   void executeAlloc(ExecutionState &state,
                     ref<Expr> size,
                     bool isLocal,
                     KInstruction *target,
                     bool zeroMemory=false,
-                    const ObjectState *reallocFrom=0);
+                    const ObjectState *reallocFrom=0,
+                    size_t allocationAlignment=0);
 
   /// Free the given address with checking for errors. If target is
   /// given it will be bound to 0 in the resulting states (this is a
@@ -432,10 +429,6 @@ private:
 
   bool shouldExitOn(enum TerminateReason termReason);
 
-  // remove state from searcher only
-  void pauseState(ExecutionState& state);
-  // add state to searcher only
-  void continueState(ExecutionState& state);
   // remove state from queue and delete
   void terminateState(ExecutionState &state);
   // call exit handler and terminate state
@@ -467,26 +460,23 @@ private:
   /// constant values.
   void bindInstructionConstants(KInstruction *KI);
 
-  void handlePointsToObj(ExecutionState &state, 
-                         KInstruction *target, 
-                         const std::vector<ref<Expr> > &arguments);
-
   void doImpliedValueConcretization(ExecutionState &state,
                                     ref<Expr> e,
                                     ref<ConstantExpr> value);
 
-  /// Add a timer to be executed periodically.
-  ///
-  /// \param timer The timer object to run on firings.
-  /// \param rate The approximate delay (in seconds) between firings.
-  void addTimer(Timer *timer, double rate);
+  /// check memory usage and terminate states when over threshold of -max-memory + 100MB
+  /// \return true if below threshold, false otherwise (states were terminated)
+  bool checkMemoryUsage();
 
-  void initTimers();
-  void processTimers(ExecutionState *current,
-                     double maxInstTime);
-  void checkMemoryUsage();
+  /// check if branching/forking is allowed
+  bool branchingPermitted(const ExecutionState &state) const;
+
   void printDebugInstructions(ExecutionState &state);
   void doDumpStates();
+
+  /// Only for debug purposes; enable via debugger or klee-control
+  void dumpStates();
+  void dumpPTree();
 
 public:
   Executor(llvm::LLVMContext &ctx, const InterpreterOptions &opts,
@@ -557,8 +547,11 @@ public:
 
   /// Returns the errno location in memory of the state
   int *getErrnoLocation(const ExecutionState &state) const;
+
+  MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
+  void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
 };
   
 } // End klee namespace
 
-#endif
+#endif /* KLEE_EXECUTOR_H */

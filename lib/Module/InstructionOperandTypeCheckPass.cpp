@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 #include "Passes.h"
 #include "klee/Config/Version.h"
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -98,7 +98,6 @@ bool checkInstruction(const Instruction *i) {
            checkOperandsHaveSameType(i, 1, 2);
   }
   // Integer arithmetic, logical and shifting
-  // TODO: When we upgrade to newer LLVM use LLVM_FALLTHROUGH
   case Instruction::Add:
   case Instruction::Sub:
   case Instruction::Mul:

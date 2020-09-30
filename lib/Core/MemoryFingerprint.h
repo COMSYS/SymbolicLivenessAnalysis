@@ -1,8 +1,8 @@
 #ifndef KLEE_MEMORYFINGERPRINT_H
 #define KLEE_MEMORYFINGERPRINT_H
 
-#include "klee/Expr.h"
 #include "klee/Config/config.h"
+#include "klee/Expr/Expr.h"
 
 #ifndef __cpp_rtti
 // stub for typeid to use CryptoPP without RTTI

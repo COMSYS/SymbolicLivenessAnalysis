@@ -6,17 +6,22 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+
 #include "klee/Config/config.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Internal/Support/FileHandling.h"
+#include "klee/Support/OptionCategories.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/FileHandling.h"
+
 #ifdef ENABLE_Z3
+
 #include "Z3Solver.h"
 #include "Z3Builder.h"
-#include "klee/Constraints.h"
-#include "klee/Solver.h"
-#include "klee/SolverImpl.h"
-#include "klee/util/Assignment.h"
-#include "klee/util/ExprUtil.h"
+
+#include "klee/Expr/Constraints.h"
+#include "klee/Expr/Assignment.h"
+#include "klee/Expr/ExprUtil.h"
+#include "klee/Solver/Solver.h"
+#include "klee/Solver/SolverImpl.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -25,19 +30,23 @@ namespace {
 // the z3 binary to replay all Z3 API calls using its `-log` option.
 llvm::cl::opt<std::string> Z3LogInteractionFile(
     "debug-z3-log-api-interaction", llvm::cl::init(""),
-    llvm::cl::desc("Log API interaction with Z3 to the specified path"));
+    llvm::cl::desc("Log API interaction with Z3 to the specified path"),
+    llvm::cl::cat(klee::SolvingCat));
 
 llvm::cl::opt<std::string> Z3QueryDumpFile(
     "debug-z3-dump-queries", llvm::cl::init(""),
-    llvm::cl::desc("Dump Z3's representation of the query to the specified path"));
+    llvm::cl::desc("Dump Z3's representation of the query to the specified path"),
+    llvm::cl::cat(klee::SolvingCat));
 
 llvm::cl::opt<bool> Z3ValidateModels(
     "debug-z3-validate-models", llvm::cl::init(false),
-    llvm::cl::desc("When generating Z3 models validate these against the query"));
+    llvm::cl::desc("When generating Z3 models validate these against the query"),
+    llvm::cl::cat(klee::SolvingCat));
 
 llvm::cl::opt<unsigned>
     Z3VerbosityLevel("debug-z3-verbosity", llvm::cl::init(0),
-                     llvm::cl::desc("Z3 verbosity level (default=0)"));
+                     llvm::cl::desc("Z3 verbosity level (default=0)"),
+                     llvm::cl::cat(klee::SolvingCat));
 }
 
 #include "llvm/Support/ErrorHandling.h"
@@ -47,9 +56,9 @@ namespace klee {
 class Z3SolverImpl : public SolverImpl {
 private:
   Z3Builder *builder;
-  double timeout;
+  time::Span timeout;
   SolverRunStatus runStatusCode;
-  llvm::raw_fd_ostream* dumpedQueriesFile;
+  std::unique_ptr<llvm::raw_fd_ostream> dumpedQueriesFile;
   ::Z3_params solverParameters;
   // Parameter symbols
   ::Z3_symbol timeoutParamStrSymbol;
@@ -58,19 +67,18 @@ private:
                          const std::vector<const Array *> *objects,
                          std::vector<std::vector<unsigned char> > *values,
                          bool &hasSolution);
-bool validateZ3Model(::Z3_solver &theSolver, ::Z3_model &theModel);
+  bool validateZ3Model(::Z3_solver &theSolver, ::Z3_model &theModel);
 
 public:
   Z3SolverImpl();
   ~Z3SolverImpl();
 
   char *getConstraintLog(const Query &);
-  void setCoreSolverTimeout(double _timeout) {
-    assert(_timeout >= 0.0 && "timeout must be >= 0");
+  void setCoreSolverTimeout(time::Span _timeout) {
     timeout = _timeout;
 
-    unsigned int timeoutInMilliSeconds = (unsigned int)((timeout * 1000) + 0.5);
-    if (timeoutInMilliSeconds == 0)
+    auto timeoutInMilliSeconds = static_cast<unsigned>((timeout.toMicroseconds() / 1000));
+    if (!timeoutInMilliSeconds)
       timeoutInMilliSeconds = UINT_MAX;
     Z3_params_set_uint(builder->ctx, solverParameters, timeoutParamStrSymbol,
                        timeoutInMilliSeconds);
@@ -96,8 +104,7 @@ Z3SolverImpl::Z3SolverImpl()
           /*z3LogInteractionFileArg=*/Z3LogInteractionFile.size() > 0
               ? Z3LogInteractionFile.c_str()
               : NULL)),
-      timeout(0.0), runStatusCode(SOLVER_RUN_STATUS_FAILURE),
-      dumpedQueriesFile(0) {
+      runStatusCode(SOLVER_RUN_STATUS_FAILURE) {
   assert(builder && "unable to create Z3Builder");
   solverParameters = Z3_mk_params(builder->ctx);
   Z3_params_inc_ref(builder->ctx, solverParameters);
@@ -107,7 +114,7 @@ Z3SolverImpl::Z3SolverImpl()
   if (!Z3QueryDumpFile.empty()) {
     std::string error;
     dumpedQueriesFile = klee_open_output_file(Z3QueryDumpFile, error);
-    if (!error.empty()) {
+    if (!dumpedQueriesFile) {
       klee_error("Error creating file for dumping Z3 queries: %s",
                  error.c_str());
     }
@@ -127,11 +134,6 @@ Z3SolverImpl::Z3SolverImpl()
 Z3SolverImpl::~Z3SolverImpl() {
   Z3_params_dec_ref(builder->ctx, solverParameters);
   delete builder;
-
-  if (dumpedQueriesFile) {
-    dumpedQueriesFile->close();
-    delete dumpedQueriesFile;
-  }
 }
 
 Z3Solver::Z3Solver() : Solver(new Z3SolverImpl()) {}
@@ -140,7 +142,7 @@ char *Z3Solver::getConstraintLog(const Query &query) {
   return impl->getConstraintLog(query);
 }
 
-void Z3Solver::setCoreSolverTimeout(double timeout) {
+void Z3Solver::setCoreSolverTimeout(time::Span timeout) {
   impl->setCoreSolverTimeout(timeout);
 }
 
@@ -170,10 +172,10 @@ char *Z3SolverImpl::getConstraintLog(const Query &query) {
   constant_arrays_in_query.visit(query.expr);
 
   for (auto const &constant_array : constant_arrays_in_query.results) {
-    assert(builder->constant_array_assertions.count(constant_array) == 1 &&
+    assert(temp_builder.constant_array_assertions.count(constant_array) == 1 &&
            "Constant array found in query, but not handled by Z3Builder");
     for (auto const &arrayIndexValueExpr :
-         builder->constant_array_assertions[constant_array]) {
+         temp_builder.constant_array_assertions[constant_array]) {
       assumptions.push_back(arrayIndexValueExpr);
     }
   }
@@ -210,7 +212,7 @@ char *Z3SolverImpl::getConstraintLog(const Query &query) {
 }
 
 bool Z3SolverImpl::computeTruth(const Query &query, bool &isValid) {
-  bool hasSolution;
+  bool hasSolution = false; // to remove compiler warning
   bool status =
       internalRunSolver(query, /*objects=*/NULL, /*values=*/NULL, hasSolution);
   isValid = !hasSolution;

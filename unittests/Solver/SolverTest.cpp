@@ -7,15 +7,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
 #include "gtest/gtest.h"
 
-#include "klee/CommandLine.h"
-#include "klee/Constraints.h"
-#include "klee/Expr.h"
-#include "klee/Solver.h"
-#include "klee/util/ArrayCache.h"
+#include "klee/Expr/ArrayCache.h"
+#include "klee/Expr/Constraints.h"
+#include "klee/Expr/Expr.h"
+#include "klee/Solver/Solver.h"
+#include "klee/Solver/SolverCmdLine.h"
+
 #include "llvm/ADT/StringExtras.h"
+
+#include <iostream>
 
 using namespace klee;
 
@@ -78,9 +80,10 @@ void testOperation(Solver &solver,
     
     ref<Expr> queryExpr = EqExpr::create(fullySymbolicExpr, 
                                          partiallyConstantExpr);
-    
-    ConstraintManager constraints;
-    constraints.addConstraint(expr);
+
+    ConstraintSet constraints;
+    ConstraintManager cm(constraints);
+    cm.addConstraint(expr);
     bool res;
     bool success = solver.mustBeTrue(Query(constraints, queryExpr), res);
     EXPECT_EQ(true, success) << "Constraint solving failed";

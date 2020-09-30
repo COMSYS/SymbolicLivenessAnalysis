@@ -3,7 +3,7 @@
 
 #include "MemoryFingerprint.h"
 
-#include "klee/Internal/Module/KInstruction.h"
+#include "klee/Module/KInstruction.h"
 
 #include <vector>
 

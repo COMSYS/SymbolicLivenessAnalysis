@@ -10,11 +10,11 @@
 #ifdef ENABLE_Z3
 #include "Z3Builder.h"
 
-#include "klee/Expr.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Solver.h"
-#include "klee/SolverStats.h"
-#include "klee/util/Bits.h"
+#include "klee/ADT/Bits.h"
+#include "klee/Expr/Expr.h"
+#include "klee/Solver/Solver.h"
+#include "klee/Solver/SolverStats.h"
+#include "klee/Support/ErrorHandling.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -24,8 +24,9 @@ using namespace klee;
 namespace {
 llvm::cl::opt<bool> UseConstructHashZ3(
     "use-construct-hash-z3",
-    llvm::cl::desc("Use hash-consing during Z3 query construction."),
-    llvm::cl::init(true));
+    llvm::cl::desc("Use hash-consing during Z3 query construction (default=true)"),
+    llvm::cl::init(true),
+    llvm::cl::cat(klee::ExprCat));
 
 // FIXME: This should be std::atomic<bool>. Need C++11 for that.
 bool Z3InterationLogOpen = false;
@@ -391,12 +392,8 @@ Z3ASTHandle Z3Builder::getInitialArray(const Array *root) {
   if (!hashed) {
     // Unique arrays by name, so we make sure the name is unique by
     // using the size of the array hash as a counter.
-    std::string unique_id = llvm::itostr(_arr_hash._array_hash.size());
-    unsigned const uid_length = unique_id.length();
-    unsigned const space = (root->name.length() > 32 - uid_length)
-                               ? (32 - uid_length)
-                               : root->name.length();
-    std::string unique_name = root->name.substr(0, space) + unique_id;
+    std::string unique_id = llvm::utostr(_arr_hash._array_hash.size());
+    std::string unique_name = root->name + unique_id;
 
     array_expr = buildArray(unique_name.c_str(), root->getDomain(),
                             root->getRange());
@@ -438,7 +435,7 @@ Z3ASTHandle Z3Builder::getArrayForUpdate(const Array *root,
     bool hashed = _arr_hash.lookupUpdateNodeExpr(un, un_expr);
 
     if (!hashed) {
-      un_expr = writeExpr(getArrayForUpdate(root, un->next),
+      un_expr = writeExpr(getArrayForUpdate(root, un->next.get()),
                           construct(un->index, 0), construct(un->value, 0));
 
       _arr_hash.hashUpdateNodeExpr(un, un_expr);
@@ -521,7 +518,7 @@ Z3ASTHandle Z3Builder::constructActual(ref<Expr> e, int *width_out) {
     ReadExpr *re = cast<ReadExpr>(e);
     assert(re && re->updates.root);
     *width_out = re->updates.root->getRange();
-    return readExpr(getArrayForUpdate(re->updates.root, re->updates.head),
+    return readExpr(getArrayForUpdate(re->updates.root, re->updates.head.get()),
                     construct(re->index, 0));
   }
 

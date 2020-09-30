@@ -1,4 +1,4 @@
-// RUN: %llvmgcc %s -emit-llvm -O0 -g -c  -D_FORTIFY_SOURCE=0 -o %t2.bc
+// RUN: %clang %s -emit-llvm %O0opt -g -c  -D_FORTIFY_SOURCE=0 -o %t2.bc
 // RUN: rm -rf %t.klee-out
 // RUN: %klee --output-dir=%t.klee-out %t2.bc 2> %t.log
 // RUN: FileCheck %s --input-file=%t.log
@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
 
   assert(memcmp(src, dst, LENGTH) == 0);
   // CHECK-NOT: calling external: memcmp
+  // CHECK-NOT: calling external: bcmp
 
   assert(*src == 42);
   assert(*src == *dst);

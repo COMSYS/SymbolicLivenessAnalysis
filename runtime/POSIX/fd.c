@@ -10,31 +10,50 @@
 #define _LARGEFILE64_SOURCE
 #include "fd.h"
 
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "klee/klee.h"
+
+#include <assert.h>
 #include <errno.h>
-#include <sys/syscall.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#ifndef __FreeBSD__
 #include <sys/vfs.h>
-#include <unistd.h>
+#endif
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/mtio.h>
-#include <termios.h>
 #include <sys/select.h>
-#include <klee/klee.h>
 #include <sys/time.h>
+#include <termios.h>
+#include <unistd.h>
 
 /* Returns pointer to the symbolic file structure fs the pathname is symbolic */
 static exe_disk_file_t *__get_sym_file(const char *pathname) {
   if (!pathname)
     return NULL;
 
+  // Handle the case where symbolic file is given as an absolute path, ie.
+  // /current/work/dir/A
+  if (pathname[0] == '/') {
+    char cwd[1024] = {0};
+    if (getcwd(cwd, 1024)) {
+      size_t cwd_len = strlen(cwd);
+      // strip trailing / if present
+      if (cwd_len > 0 && cwd[cwd_len - 1] == '/') {
+        cwd[--cwd_len] = '\0';
+      }
+      if (strncmp(pathname, cwd, cwd_len) == 0) {
+        if (pathname[cwd_len] != '\0')
+          pathname += cwd_len + 1;
+      }
+    }
+  }
   char c = pathname[0];
   unsigned i;
 
@@ -784,7 +803,9 @@ int __fd_getdents(unsigned int fd, struct dirent64 *dirp, unsigned int count) {
         dirp->d_type = IFTODT(df->stat->st_mode);
         dirp->d_name[0] = 'A' + i;
         dirp->d_name[1] = '\0';
+#ifdef _DIRENT_HAVE_D_OFF
         dirp->d_off = (i+1) * sizeof(*dirp);
+#endif
         bytes += dirp->d_reclen;
         ++dirp;
       }
@@ -795,7 +816,9 @@ int __fd_getdents(unsigned int fd, struct dirent64 *dirp, unsigned int count) {
       dirp->d_reclen = pad - bytes;
       dirp->d_type = DT_UNKNOWN;
       dirp->d_name[0] = '\0';
+#ifdef _DIRENT_HAVE_D_OFF
       dirp->d_off = 4096;
+#endif
       bytes += dirp->d_reclen;
       f->off = pad;
 
@@ -825,7 +848,9 @@ int __fd_getdents(unsigned int fd, struct dirent64 *dirp, unsigned int count) {
         /* Patch offsets */
         while (pos < res) {
           struct dirent64 *dp = (struct dirent64*) ((char*) dirp + pos);
+#ifdef _DIRENT_HAVE_D_OFF
           dp->d_off += 4096;
+#endif
           pos += dp->d_reclen;
         }
       }
@@ -872,7 +897,9 @@ int ioctl(int fd, unsigned long request, ...) {
         ts->c_oflag = 5;
         ts->c_cflag = 1215;
         ts->c_lflag = 35287;
+#ifdef __GLIBC__
         ts->c_line = 0;
+#endif
         ts->c_cc[0] = '\x03';
         ts->c_cc[1] = '\x1c';
         ts->c_cc[2] = '\x7f';
@@ -984,15 +1011,23 @@ int fcntl(int fd, int cmd, ...) {
   exe_file_t *f = __get_file(fd);
   va_list ap;
   unsigned arg; /* 32 bit assumption (int/ptr) */
+  struct flock *lock;
 
   if (!f) {
     errno = EBADF;
     return -1;
   }
-  
+#ifdef F_GETSIG
   if (cmd==F_GETFD || cmd==F_GETFL || cmd==F_GETOWN || cmd==F_GETSIG ||
       cmd==F_GETLEASE || cmd==F_NOTIFY) {
+#else
+   if (cmd==F_GETFD || cmd==F_GETFL || cmd==F_GETOWN) {
+#endif
     arg = 0;
+  } else if (cmd == F_GETLK || cmd == F_SETLK || cmd == F_SETLKW) {
+    va_start(ap, cmd);
+    lock = va_arg(ap, struct flock *);
+    va_end(ap);
   } else {
     va_start(ap, cmd);
     arg = va_arg(ap, int);
@@ -1020,6 +1055,20 @@ int fcntl(int fd, int cmd, ...) {
 	 return them here.  These same flags can be set by F_SETFL,
 	 which we could also handle properly. 
       */
+      return 0;
+    }
+    // Initially no other process keeps a lock, so we say the file is unlocked.
+    // Of course this doesn't account for a program locking and then checking if
+    // a lock is there. However this is quite paranoid programming and we assume
+    // doesn't happen.
+    case F_GETLK: {
+      lock->l_type = F_UNLCK;
+      return 0;
+    }
+    // We assume the application does locking correctly and will lock/unlock
+    // files correctly.
+    // Therefore this call always succeeds.
+    case F_SETLK: {
       return 0;
     }
     default:
@@ -1338,19 +1387,25 @@ static const char *__concretize_string(const char *s) {
   char *sc = __concretize_ptr(s);
   unsigned i;
 
-  for (i=0; ; ++i) {
+  for (i = 0;; ++i, ++sc) {
     char c = *sc;
+    // Avoid writing read-only memory locations
+    if (!klee_is_symbolic(c)) {
+      if (!c)
+        break;
+      continue;
+    }
     if (!(i&(i-1))) {
       if (!c) {
-        *sc++ = 0;
+        *sc = 0;
         break;
       } else if (c=='/') {
-        *sc++ = '/';
+        *sc = '/';
       } 
     } else {
       char cc = (char) klee_get_valuel((long)c);
       klee_assume(cc == c);
-      *sc++ = cc;
+      *sc = cc;
       if (!cc) break;
     }
   }

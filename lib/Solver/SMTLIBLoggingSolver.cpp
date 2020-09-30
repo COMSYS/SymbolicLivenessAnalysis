@@ -8,7 +8,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "QueryLoggingSolver.h"
-#include "klee/util/ExprSMTLIBPrinter.h"
+
+#include "klee/Expr/ExprSMTLIBPrinter.h"
 
 using namespace klee;
 
@@ -43,9 +44,10 @@ class SMTLIBLoggingSolver : public QueryLoggingSolver
         
 	public:
 		SMTLIBLoggingSolver(Solver *_solver,
-                                    std::string path,
-                                    int queryTimeToLog)                
-		: QueryLoggingSolver(_solver, path, ";", queryTimeToLog)
+                        std::string path,
+                        time::Span queryTimeToLog,
+                        bool logTimedOut)
+		: QueryLoggingSolver(_solver, path, ";", queryTimeToLog, logTimedOut)
 		{
 		  //Setup the printer
 		  printer.setOutput(logBuffer);
@@ -54,7 +56,7 @@ class SMTLIBLoggingSolver : public QueryLoggingSolver
 
 
 Solver* klee::createSMTLIBLoggingSolver(Solver *_solver, std::string path,
-                                        int minQueryTimeToLog)
+                                        time::Span minQueryTimeToLog, bool logTimedOut)
 {
-  return new Solver(new SMTLIBLoggingSolver(_solver, path, minQueryTimeToLog));
+  return new Solver(new SMTLIBLoggingSolver(_solver, path, minQueryTimeToLog, logTimedOut));
 }

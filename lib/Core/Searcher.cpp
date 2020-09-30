@@ -10,43 +10,35 @@
 #include "Searcher.h"
 
 #include "CoreStats.h"
+#include "ExecutionState.h"
 #include "Executor.h"
+#include "MergeHandler.h"
 #include "PTree.h"
 #include "StatsTracker.h"
 
-#include "klee/ExecutionState.h"
-#include "klee/MergeHandler.h"
-#include "klee/Statistics.h"
-#include "klee/Internal/Module/InstructionInfoTable.h"
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/ADT/DiscretePDF.h"
-#include "klee/Internal/ADT/RNG.h"
-#include "klee/Internal/Support/ModuleUtil.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/ADT/DiscretePDF.h"
+#include "klee/ADT/RNG.h"
+#include "klee/Statistics/Statistics.h"
+#include "klee/Module/InstructionInfoTable.h"
+#include "klee/Module/KInstruction.h"
+#include "klee/Module/KModule.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/ModuleUtil.h"
+#include "klee/System/Time.h"
+
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 
-#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
-#include "llvm/Support/CallSite.h"
-#else
-#include "llvm/IR/CallSite.h"
-#endif
-
 #include <cassert>
-#include <fstream>
 #include <climits>
+#include <cmath>
+#include <fstream>
 
 using namespace klee;
 using namespace llvm;
 
-
-namespace klee {
-  extern RNG theRNG;
-}
 
 Searcher::~Searcher() {
 }
@@ -169,11 +161,13 @@ RandomSearcher::update(ExecutionState *current,
 
 ///
 
-WeightedRandomSearcher::WeightedRandomSearcher(WeightType _type)
-  : states(new DiscretePDF<ExecutionState*>()),
-    type(_type) {
+WeightedRandomSearcher::WeightedRandomSearcher(WeightType type, RNG &rng)
+  : states(new DiscretePDF<ExecutionState*, ExecutionStateIDCompare>()),
+    theRNG{rng},
+    type(type) {
   switch(type) {
-  case Depth: 
+  case Depth:
+  case RP:
     updateWeights = false;
     break;
   case InstCount:
@@ -199,8 +193,10 @@ ExecutionState &WeightedRandomSearcher::selectState() {
 double WeightedRandomSearcher::getWeight(ExecutionState *es) {
   switch(type) {
   default:
-  case Depth: 
-    return es->weight;
+  case Depth:
+    return es->depth;
+  case RP:
+    return std::pow(0.5, es->depth);
   case InstCount: {
     uint64_t count = theStatisticManager->getIndexedValue(stats::instructions,
                                                           es->pc->info->id);
@@ -214,7 +210,9 @@ double WeightedRandomSearcher::getWeight(ExecutionState *es) {
     return inv;
   }
   case QueryCost:
-    return (es->queryCost < .1) ? 1. : 1./es->queryCost;
+    return (es->queryMetaData.queryCost.toSeconds() < .1)
+               ? 1.
+               : 1. / es->queryMetaData.queryCost.toSeconds();
   case CoveringNew:
   case MinDistToUncovered: {
     uint64_t md2u = computeMinDistToUncovered(es->pc,
@@ -260,49 +258,94 @@ bool WeightedRandomSearcher::empty() {
 }
 
 ///
-RandomPathSearcher::RandomPathSearcher(Executor &_executor)
-  : executor(_executor) {
+RandomPathSearcher::RandomPathSearcher(PTree &processTree, RNG &rng)
+  : processTree{processTree}, theRNG{rng}, idBitMask{processTree.getNextId()} {
 }
 
 RandomPathSearcher::~RandomPathSearcher() {
 }
+// Check if n is a valid pointer and a node belonging to us
+#define IS_OUR_NODE_VALID(n)                                                   \
+  (((n).getPointer() != nullptr) && (((n).getInt() & idBitMask) != 0))
 
 ExecutionState &RandomPathSearcher::selectState() {
   unsigned flips=0, bits=0;
-  PTree::Node *n = executor.processTree->root;
-  while (!n->data) {
-    if (!n->left) {
-      n = n->right;
-    } else if (!n->right) {
-      n = n->left;
+  assert(processTree.root.getInt() & idBitMask &&
+         "Root should belong to the searcher");
+  PTreeNode *n = processTree.root.getPointer();
+  while (!n->state) {
+    if (!IS_OUR_NODE_VALID(n->left)) {
+      assert(IS_OUR_NODE_VALID(n->right) &&
+             "Both left and right nodes invalid");
+      assert(n != n->right.getPointer());
+      n = n->right.getPointer();
+    } else if (!IS_OUR_NODE_VALID(n->right)) {
+      assert(IS_OUR_NODE_VALID(n->left) && "Both right and left nodes invalid");
+      assert(n != n->left.getPointer());
+      n = n->left.getPointer();
     } else {
       if (bits==0) {
         flips = theRNG.getInt32();
         bits = 32;
       }
       --bits;
-      n = (flips&(1<<bits)) ? n->left : n->right;
+      n = ((flips & (1 << bits)) ? n->left : n->right).getPointer();
     }
   }
 
-  return *n->data;
+  return *n->state;
 }
 
 void
 RandomPathSearcher::update(ExecutionState *current,
                            const std::vector<ExecutionState *> &addedStates,
                            const std::vector<ExecutionState *> &removedStates) {
+  for (auto es : addedStates) {
+    PTreeNode *pnode = es->ptreeNode, *parent = pnode->parent;
+    PTreeNodePtr *childPtr;
+
+    childPtr = parent ? ((parent->left.getPointer() == pnode) ? &parent->left
+                                                              : &parent->right)
+                      : &processTree.root;
+    while (pnode && !IS_OUR_NODE_VALID(*childPtr)) {
+      childPtr->setInt(childPtr->getInt() | idBitMask);
+      pnode = parent;
+      if (pnode)
+        parent = pnode->parent;
+
+      childPtr = parent
+                     ? ((parent->left.getPointer() == pnode) ? &parent->left
+                                                             : &parent->right)
+                     : &processTree.root;
+    }
+  }
+
+  for (auto es : removedStates) {
+    PTreeNode *pnode = es->ptreeNode, *parent = pnode->parent;
+
+    while (pnode && !IS_OUR_NODE_VALID(pnode->left) &&
+           !IS_OUR_NODE_VALID(pnode->right)) {
+      auto childPtr =
+          parent ? ((parent->left.getPointer() == pnode) ? &parent->left
+                                                         : &parent->right)
+                 : &processTree.root;
+      assert(IS_OUR_NODE_VALID(*childPtr) && "Removing pTree child not ours");
+      childPtr->setInt(childPtr->getInt() & ~idBitMask);
+      pnode = parent;
+      if (pnode)
+        parent = pnode->parent;
+    }
+  }
 }
 
-bool RandomPathSearcher::empty() { 
-  return executor.states.empty(); 
+bool RandomPathSearcher::empty() {
+  return !IS_OUR_NODE_VALID(processTree.root);
 }
 
 ///
 
-MergingSearcher::MergingSearcher(Executor &_executor, Searcher *_baseSearcher)
-  : executor(_executor),
-  baseSearcher(_baseSearcher){}
+MergingSearcher::MergingSearcher(Searcher *_baseSearcher)
+  : baseSearcher(_baseSearcher){}
 
 MergingSearcher::~MergingSearcher() {
   delete baseSearcher;
@@ -311,8 +354,11 @@ MergingSearcher::~MergingSearcher() {
 ExecutionState& MergingSearcher::selectState() {
   assert(!baseSearcher->empty() && "base searcher is empty");
 
+  if (!UseIncompleteMerge)
+    return baseSearcher->selectState();
+
   // Iterate through all MergeHandlers
-  for (auto cur_mergehandler: executor.mergeGroups) {
+  for (auto cur_mergehandler: mergeGroups) {
     // Find one that has states that could be released
     if (!cur_mergehandler->hasMergedStates()) {
       continue;
@@ -337,7 +383,7 @@ ExecutionState& MergingSearcher::selectState() {
 ///
 
 BatchingSearcher::BatchingSearcher(Searcher *_baseSearcher,
-                                   double _timeBudget,
+                                   time::Span _timeBudget,
                                    unsigned _instructionBudget) 
   : baseSearcher(_baseSearcher),
     timeBudget(_timeBudget),
@@ -351,19 +397,22 @@ BatchingSearcher::~BatchingSearcher() {
 }
 
 ExecutionState &BatchingSearcher::selectState() {
-  if (!lastState || 
-      (util::getWallTime()-lastStartTime)>timeBudget ||
-      (stats::instructions-lastStartInstructions)>instructionBudget) {
+  if (!lastState ||
+      (((timeBudget.toSeconds() > 0) &&
+        (time::getWallTime() - lastStartTime) > timeBudget)) ||
+      ((instructionBudget > 0) &&
+       (stats::instructions - lastStartInstructions) > instructionBudget)) {
     if (lastState) {
-      double delta = util::getWallTime()-lastStartTime;
-      if (delta>timeBudget*1.1) {
-        klee_message("increased time budget from %f to %f\n", timeBudget,
-                     delta);
+      time::Span delta = time::getWallTime() - lastStartTime;
+      auto t = timeBudget;
+      t *= 1.1;
+      if (delta > t) {
+        klee_message("increased time budget from %f to %f\n", timeBudget.toSeconds(), delta.toSeconds());
         timeBudget = delta;
       }
     }
     lastState = &baseSearcher->selectState();
-    lastStartTime = util::getWallTime();
+    lastStartTime = time::getWallTime();
     lastStartInstructions = stats::instructions;
     return *lastState;
   } else {
@@ -385,7 +434,7 @@ BatchingSearcher::update(ExecutionState *current,
 
 IterativeDeepeningTimeSearcher::IterativeDeepeningTimeSearcher(Searcher *_baseSearcher)
   : baseSearcher(_baseSearcher),
-    time(1.) {
+    time(time::seconds(1)) {
 }
 
 IterativeDeepeningTimeSearcher::~IterativeDeepeningTimeSearcher() {
@@ -394,14 +443,15 @@ IterativeDeepeningTimeSearcher::~IterativeDeepeningTimeSearcher() {
 
 ExecutionState &IterativeDeepeningTimeSearcher::selectState() {
   ExecutionState &res = baseSearcher->selectState();
-  startTime = util::getWallTime();
+  startTime = time::getWallTime();
   return res;
 }
 
 void IterativeDeepeningTimeSearcher::update(
     ExecutionState *current, const std::vector<ExecutionState *> &addedStates,
     const std::vector<ExecutionState *> &removedStates) {
-  double elapsed = util::getWallTime() - startTime;
+
+  const auto elapsed = time::getWallTime() - startTime;
 
   if (!removedStates.empty()) {
     std::vector<ExecutionState *> alt = removedStates;
@@ -430,8 +480,8 @@ void IterativeDeepeningTimeSearcher::update(
   }
 
   if (baseSearcher->empty()) {
-    time *= 2;
-    klee_message("increased time budget to %f\n", time);
+    time *= 2U;
+    klee_message("increased time budget to %f\n", time.toSeconds());
     std::vector<ExecutionState *> ps(pausedStates.begin(), pausedStates.end());
     baseSearcher->update(0, ps, std::vector<ExecutionState *>());
     pausedStates.clear();

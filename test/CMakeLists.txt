@@ -17,11 +17,6 @@ set(LLVMCXX "${LLVMCXX} -I${CMAKE_SOURCE_DIR}/include")
 set(NATIVE_CC "${CMAKE_C_COMPILER} ${CMAKE_C_FLAGS} -I ${CMAKE_SOURCE_DIR}/include")
 set(NATIVE_CXX "${CMAKE_CXX_COMPILER} ${CMAKE_CXX_FLAGS} -I ${CMAKE_SOURCE_DIR}/include")
 set(TARGET_TRIPLE "${TARGET_TRIPLE}")
-if (ENABLE_KLEE_UCLIBC)
-  set(ENABLE_UCLIBC 1)
-else()
-  set(ENABLE_UCLIBC 0)
-endif()
 
 # FIXME: Do this to avoid changing the template file that
 # is shared by both build systems.
@@ -67,11 +62,21 @@ if (NOT EXISTS "${LLVM_TOOLS_BINARY_DIR}/not")
 endif()
 
 if (DOWNLOAD_FILECHECK_SOURCE)
-  set(FILECHECK_SRC_URL "https://raw.githubusercontent.com/llvm-mirror/llvm/release_${LLVM_VERSION_MAJOR}${LLVM_VERSION_MINOR}/utils/FileCheck/FileCheck.cpp")
+  if (${LLVM_VERSION_MAJOR} GREATER 3)
+    set(FILECHECK_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.x/llvm/utils/FileCheck/FileCheck.cpp")
+  else()
+    set(FILECHECK_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.x/llvm/utils/FileCheck/FileCheck.cpp")
+  endif()
   set(FILECHECK_SRC_FILE "${CMAKE_CURRENT_BINARY_DIR}/FileCheck.cpp")
   if (NOT EXISTS "${FILECHECK_SRC_FILE}")
     message(STATUS "Downloading LLVM FileCheck source")
-    file(DOWNLOAD "${FILECHECK_SRC_URL}" "${FILECHECK_SRC_FILE}" SHOW_PROGRESS)
+    file(DOWNLOAD "${FILECHECK_SRC_URL}" "${FILECHECK_SRC_FILE}" SHOW_PROGRESS STATUS DOWNLOAD_STATUS)
+    list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
+    if (NOT DOWNLOAD_STATUS_CODE EQUAL 0)
+      file(REMOVE "${FILECHECK_SRC_FILE}")
+      list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_MESSAGE)
+      message(FATAL_ERROR "Download failed with error: ${DOWNLOAD_STATUS_CODE} - ${DOWNLOAD_STATUS_MESSAGE}")
+    endif()
   endif()
   add_executable(FileCheck
     ${FILECHECK_SRC_FILE}
@@ -84,11 +89,21 @@ if (DOWNLOAD_FILECHECK_SOURCE)
 endif()
 
 if (DOWNLOAD_NOT_SOURCE)
-  set(NOT_SRC_URL "https://raw.githubusercontent.com/llvm-mirror/llvm/release_${LLVM_VERSION_MAJOR}${LLVM_VERSION_MINOR}/utils/not/not.cpp")
+  if (${LLVM_VERSION_MAJOR} GREATER 3)
+    set(NOT_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.x/llvm/utils/not/not.cpp")
+  else()
+    set(NOT_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.x/llvm/utils/not/not.cpp")
+  endif()
   set(NOT_SRC_FILE "${CMAKE_CURRENT_BINARY_DIR}/not.cpp")
   if (NOT EXISTS "${NOT_SRC_FILE}")
     message(STATUS "Downloading LLVM not source")
-    file(DOWNLOAD "${NOT_SRC_URL}" "${NOT_SRC_FILE}" SHOW_PROGRESS)
+    file(DOWNLOAD "${NOT_SRC_URL}" "${NOT_SRC_FILE}" SHOW_PROGRESS STATUS DOWNLOAD_STATUS)
+    list(GET DOWNLOAD_STATUS 0 DOWNLOAD_STATUS_CODE)
+    if (NOT DOWNLOAD_STATUS_CODE EQUAL 0)
+      file(REMOVE "${NOT_SRC_FILE}")
+      list(GET DOWNLOAD_STATUS 1 DOWNLOAD_STATUS_MESSAGE)
+      message(FATAL_ERROR "Download failed with error: ${DOWNLOAD_STATUS_CODE} - ${DOWNLOAD_STATUS_MESSAGE}")
+    endif()
   endif()
   add_executable("not"
     ${NOT_SRC_FILE}
@@ -129,7 +144,7 @@ configure_file(lit.site.cfg.in
 
 add_custom_target(systemtests
   COMMAND "${LIT_TOOL}" ${LIT_ARGS} "${CMAKE_CURRENT_BINARY_DIR}"
-  DEPENDS klee kleaver kleeRuntest
+  DEPENDS klee kleaver klee-replay kleeRuntest gen-bout gen-random-bout
   COMMENT "Running system tests"
   ${ADD_CUSTOM_COMMAND_USES_TERMINAL_ARG}
 )

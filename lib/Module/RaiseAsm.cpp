@@ -9,17 +9,22 @@
 
 #include "Passes.h"
 #include "klee/Config/Version.h"
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Support/ErrorHandling.h"
+
+#include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Instructions.h"
-
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/raw_ostream.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(6, 0)
+#include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/Target/TargetMachine.h"
+#else
 #include "llvm/Target/TargetLowering.h"
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 #endif
@@ -56,11 +61,17 @@ bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I) {
 
   if (triple.getArch() == llvm::Triple::x86_64 &&
       (triple.getOS() == llvm::Triple::Linux ||
-       triple.getOS() == llvm::Triple::Darwin)) {
+       triple.getOS() == llvm::Triple::Darwin ||
+       triple.getOS() == llvm::Triple::FreeBSD)) {
 
-    if (ia->getAsmString() == "" && ia->hasSideEffects()) {
+    if (ia->getAsmString() == "" && ia->hasSideEffects() &&
+        ia->getFunctionType()->getReturnType()->isVoidTy()) {
       IRBuilder<> Builder(I);
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+      Builder.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
+#else
       Builder.CreateFence(llvm::SequentiallyConsistent);
+#endif
       I->eraseFromParent();
       return true;
     }
@@ -81,16 +92,13 @@ bool RaiseAsmPass::runOnModule(Module &M) {
     klee_warning("Warning: unable to select native target: %s", Err.c_str());
     TLI = 0;
   } else {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+    TM = NativeTarget->createTargetMachine(HostTriple, "", "", TargetOptions(),
+        None);
+    TLI = TM->getSubtargetImpl(*(M.begin()))->getTargetLowering();
+#else
     TM = NativeTarget->createTargetMachine(HostTriple, "", "", TargetOptions());
     TLI = TM->getSubtargetImpl(*(M.begin()))->getTargetLowering();
-#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-    TM = NativeTarget->createTargetMachine(HostTriple, "", "", TargetOptions());
-    TLI = TM->getSubtargetImpl()->getTargetLowering();
-#else
-    TM = NativeTarget->createTargetMachine(HostTriple, "", "",
-                                                          TargetOptions());
-    TLI = TM->getTargetLowering();
 #endif
 
     triple = llvm::Triple(HostTriple);

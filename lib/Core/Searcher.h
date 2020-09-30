@@ -10,11 +10,18 @@
 #ifndef KLEE_SEARCHER_H
 #define KLEE_SEARCHER_H
 
+#include "ExecutionState.h"
+#include "PTree.h"
+#include "klee/ADT/RNG.h"
+#include "klee/System/Time.h"
+
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
-#include <vector>
-#include <set>
+
 #include <map>
 #include <queue>
+#include <set>
+#include <vector>
 
 namespace llvm {
   class BasicBlock;
@@ -24,7 +31,7 @@ namespace llvm {
 }
 
 namespace klee {
-  template<class T> class DiscretePDF;
+  template<class T, class Comparator> class DiscretePDF;
   class ExecutionState;
   class Executor;
 
@@ -74,6 +81,7 @@ namespace klee {
       NURS_CovNew,
       NURS_MD2U,
       NURS_Depth,
+      NURS_RP,
       NURS_ICnt,
       NURS_CPICnt,
       NURS_QC
@@ -110,8 +118,10 @@ namespace klee {
 
   class RandomSearcher : public Searcher {
     std::vector<ExecutionState*> states;
+    RNG &theRNG;
 
   public:
+    explicit RandomSearcher(RNG &rng) : theRNG{rng} {}
     ExecutionState &selectState();
     void update(ExecutionState *current,
                 const std::vector<ExecutionState *> &addedStates,
@@ -126,6 +136,7 @@ namespace klee {
   public:
     enum WeightType {
       Depth,
+      RP,
       QueryCost,
       InstCount,
       CPInstCount,
@@ -134,14 +145,15 @@ namespace klee {
     };
 
   private:
-    DiscretePDF<ExecutionState*> *states;
+    DiscretePDF<ExecutionState*, ExecutionStateIDCompare> *states;
+    RNG &theRNG;
     WeightType type;
     bool updateWeights;
     
     double getWeight(ExecutionState*);
 
   public:
-    WeightedRandomSearcher(WeightType type);
+    WeightedRandomSearcher(WeightType type, RNG &rng);
     ~WeightedRandomSearcher();
 
     ExecutionState &selectState();
@@ -153,6 +165,7 @@ namespace klee {
       os << "WeightedRandomSearcher::";
       switch(type) {
       case Depth              : os << "Depth\n"; return;
+      case RP                 : os << "RandomPath\n"; return;
       case QueryCost          : os << "QueryCost\n"; return;
       case InstCount          : os << "InstCount\n"; return;
       case CPInstCount        : os << "CPInstCount\n"; return;
@@ -163,11 +176,33 @@ namespace klee {
     }
   };
 
+  /* RandomPathSearcher performs a random walk of the PTree to
+     select a state. PTree is a global data structure, however
+     a searcher can sometimes only select from a subset of all states
+     (depending on the update calls).
+
+     To support this RandomPathSearcher has a subgraph view of PTree, in that it
+     only
+     walks the PTreeNodes that it "owns". Ownership is stored in the
+     getInt method of PTreeNodePtr class (which hides it in the pointer itself).
+
+     The current implementation of PTreeNodePtr supports only 3 instances of the
+     RandomPathSearcher. This is because current PTreeNodePtr implementation
+     conforms to C++ and only steals the last 3 alligment bits. This restriction
+     could be relaxed  slightly by an architecture specific implementation of
+     PTreeNodePtr, that also steals the top bits of the pointer.
+
+     The ownership bits are maintained in the update method.
+  */
   class RandomPathSearcher : public Searcher {
-    Executor &executor;
+    PTree &processTree;
+    RNG &theRNG;
+
+    // Unique bitmask of this searcher
+    const uint8_t idBitMask;
 
   public:
-    RandomPathSearcher(Executor &_executor);
+    RandomPathSearcher(PTree &processTree, RNG &rng);
     ~RandomPathSearcher();
 
     ExecutionState &selectState();
@@ -180,26 +215,64 @@ namespace klee {
     }
   };
 
+
+  extern llvm::cl::opt<bool> UseIncompleteMerge;
   class MergeHandler;
   class MergingSearcher : public Searcher {
     friend class MergeHandler;
 
     private:
 
-    Executor &executor;
     Searcher *baseSearcher;
 
+    /// States that have been paused by the 'pauseState' function
+    std::vector<ExecutionState*> pausedStates;
+
     public:
-    MergingSearcher(Executor &executor, Searcher *baseSearcher);
+    MergingSearcher(Searcher *baseSearcher);
     ~MergingSearcher();
+
+    /// ExecutionStates currently paused from scheduling because they are
+    /// waiting to be merged in a klee_close_merge instruction
+    std::set<ExecutionState *> inCloseMerge;
+
+    /// Keeps track of all currently ongoing merges.
+    /// An ongoing merge is a set of states (stored in a MergeHandler object)
+    /// which branched from a single state which ran into a klee_open_merge(),
+    /// and not all states in the set have reached the corresponding
+    /// klee_close_merge() yet.
+    std::vector<MergeHandler *> mergeGroups;
+
+    /// Remove state from the searcher chain, while keeping it in the executor.
+    /// This is used here to 'freeze' a state while it is waiting for other
+    /// states in its merge group to reach the same instruction.
+    void pauseState(ExecutionState &state){
+      assert(std::find(pausedStates.begin(), pausedStates.end(), &state) == pausedStates.end());
+      pausedStates.push_back(&state);
+      baseSearcher->removeState(&state);
+    }
+
+    /// Continue a paused state
+    void continueState(ExecutionState &state){
+      auto it = std::find(pausedStates.begin(), pausedStates.end(), &state);
+      assert( it != pausedStates.end());
+      pausedStates.erase(it);
+      baseSearcher->addState(&state);
+    }
 
     ExecutionState &selectState();
 
     void update(ExecutionState *current,
                 const std::vector<ExecutionState *> &addedStates,
                 const std::vector<ExecutionState *> &removedStates) {
-      baseSearcher->update(current, addedStates, removedStates);
+      // We have to check if the current execution state was just deleted, as to
+      // not confuse the nurs searchers
+      if (std::find(pausedStates.begin(), pausedStates.end(), current) ==
+          pausedStates.end()) {
+        baseSearcher->update(current, addedStates, removedStates);
+      }
     }
+
     bool empty() { return baseSearcher->empty(); }
     void printName(llvm::raw_ostream &os) {
       os << "MergingSearcher\n";
@@ -208,16 +281,16 @@ namespace klee {
 
   class BatchingSearcher : public Searcher {
     Searcher *baseSearcher;
-    double timeBudget;
+    time::Span timeBudget;
     unsigned instructionBudget;
 
     ExecutionState *lastState;
-    double lastStartTime;
+    time::Point lastStartTime;
     unsigned lastStartInstructions;
 
   public:
     BatchingSearcher(Searcher *baseSearcher, 
-                     double _timeBudget,
+                     time::Span _timeBudget,
                      unsigned _instructionBudget);
     ~BatchingSearcher();
 
@@ -237,7 +310,8 @@ namespace klee {
 
   class IterativeDeepeningTimeSearcher : public Searcher {
     Searcher *baseSearcher;
-    double time, startTime;
+    time::Point startTime;
+    time::Span time;
     std::set<ExecutionState*> pausedStates;
 
   public:
@@ -281,4 +355,4 @@ namespace klee {
 
 }
 
-#endif
+#endif /* KLEE_SEARCHER_H */

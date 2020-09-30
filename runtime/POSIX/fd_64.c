@@ -15,41 +15,44 @@
 #endif
 #endif
 
-
-#include "klee/Config/Version.h"
+#define INSIDE_FD_64
 #define _LARGEFILE64_SOURCE
 #define _FILE_OFFSET_BITS 64
 #include "fd.h"
 
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "klee/Config/Version.h"
+#include "klee/klee.h"
+
+#include <assert.h>
 #include <errno.h>
-#include <sys/syscall.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#ifndef __FreeBSD__
 #include <sys/vfs.h>
-#include <unistd.h>
+#endif
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/mtio.h>
-#include <termios.h>
 #include <sys/select.h>
-#include <klee/klee.h>
+#include <termios.h>
+#include <unistd.h>
 
 /*** Forward to actual implementations ***/
 
 int open(const char *pathname, int flags, ...) {
   mode_t mode = 0;
-  
+
   if (flags & O_CREAT) {
     /* get mode */
     va_list ap;
     va_start(ap, flags);
-    mode = va_arg(ap, mode_t);
+    mode = va_arg(ap, int);
     va_end(ap);
   }
 
@@ -58,12 +61,12 @@ int open(const char *pathname, int flags, ...) {
 
 int openat(int fd, const char *pathname, int flags, ...) {
   mode_t mode = 0;
-  
+
   if (flags & O_CREAT) {
     /* get mode */
     va_list ap;
     va_start(ap, flags);
-    mode = va_arg(ap, mode_t);
+    mode = va_arg(ap, int);
     va_end(ap);
   }
 

@@ -7,27 +7,27 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "SpecialFunctionHandler.h"
+
+#include "ExecutionState.h"
+#include "Executor.h"
 #include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
-#include "SpecialFunctionHandler.h"
-#include "TimingSolver.h"
-#include "klee/MergeHandler.h"
-
-#include "klee/ExecutionState.h"
-
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/Support/Debug.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-
-#include "Executor.h"
 #include "MemoryManager.h"
+#include "MergeHandler.h"
+#include "Searcher.h"
+#include "TimingSolver.h"
 
-#include "klee/CommandLine.h"
+#include "klee/Module/KInstruction.h"
+#include "klee/Module/KModule.h"
+#include "klee/Solver/SolverCmdLine.h"
+#include "klee/Support/Debug.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/OptionCategories.h"
 
-#include "llvm/IR/Module.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Module.h"
 
 #include <errno.h>
 #include <sstream>
@@ -36,27 +36,26 @@ using namespace llvm;
 using namespace klee;
 
 namespace {
-  cl::opt<bool>
-  ReadablePosix("readable-posix-inputs",
-            cl::init(false),
-            cl::desc("Prefer creation of POSIX inputs (command-line arguments, files, etc.) with human readable bytes. "
-                     "Note: option is expensive when creating lots of tests (default=false)"));
+cl::opt<bool>
+    ReadablePosix("readable-posix-inputs", cl::init(false),
+                  cl::desc("Prefer creation of POSIX inputs (command-line "
+                           "arguments, files, etc.) with human readable bytes. "
+                           "Note: option is expensive when creating lots of "
+                           "tests (default=false)"),
+                  cl::cat(TestGenCat));
 
-  cl::opt<bool>
-  SilentKleeAssume("silent-klee-assume",
-                   cl::init(false),
-                   cl::desc("Silently terminate paths with an infeasible "
-                            "condition given to klee_assume() rather than "
-                            "emitting an error (default=false)"));
-}
-
+cl::opt<bool>
+    SilentKleeAssume("silent-klee-assume", cl::init(false),
+                     cl::desc("Silently terminate paths with an infeasible "
+                              "condition given to klee_assume() rather than "
+                              "emitting an error (default=false)"),
+                     cl::cat(TerminationCat));
+} // namespace
 
 /// \todo Almost all of the demands in this file should be replaced
 /// with terminateState calls.
 
 ///
-
-
 
 // FIXME: We are more or less committed to requiring an intrinsic
 // library these days. We can move some of this stuff there,
@@ -72,6 +71,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
                                 true, false, false }
   addDNR("__assert_rtn", handleAssertFail),
   addDNR("__assert_fail", handleAssertFail),
+  addDNR("__assert", handleAssertFail),
   addDNR("_assert", handleAssert),
   addDNR("abort", handleAbort),
   addDNR("_exit", handleExit),
@@ -114,8 +114,8 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("klee_stack_trace", handleStackTrace, false),
   add("klee_warning", handleWarning, false),
   add("klee_warning_once", handleWarningOnce, false),
-  add("klee_alias_function", handleAliasFunction, false),
   add("malloc", handleMalloc, true),
+  add("memalign", handleMemalign, true),
   add("realloc", handleRealloc, true),
 
   // operator delete[](void*)
@@ -254,31 +254,35 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
         Executor::TerminateReason::User);
     return "";
   }
-  bool res __attribute__ ((unused));
-  assert(executor.solver->mustBeTrue(state, 
-                                     EqExpr::create(address, 
-                                                    op.first->getBaseExpr()),
-                                     res) &&
-         res &&
-         "XXX interior pointer unhandled");
   const MemoryObject *mo = op.first;
   const ObjectState *os = op.second;
 
-  char *buf = new char[mo->size];
+  auto relativeOffset = mo->getOffsetExpr(address);
+  // the relativeOffset must be concrete as the address is concrete
+  size_t offset = cast<ConstantExpr>(relativeOffset)->getZExtValue();
 
-  unsigned i;
-  for (i = 0; i < mo->size - 1; i++) {
+  std::ostringstream buf;
+  char c = 0;
+  for (size_t i = offset; i < mo->size; ++i) {
     ref<Expr> cur = os->read8(i);
     cur = executor.toUnique(state, cur);
     assert(isa<ConstantExpr>(cur) && 
            "hit symbolic char while reading concrete string");
-    buf[i] = cast<ConstantExpr>(cur)->getZExtValue(8);
+    c = cast<ConstantExpr>(cur)->getZExtValue(8);
+    if (c == '\0') {
+      // we read the whole string
+      break;
+    }
+
+    buf << c;
   }
-  buf[i] = 0;
-  
-  std::string result(buf);
-  delete[] buf;
-  return result;
+
+  if (c != '\0') {
+      klee_warning_once(0, "String not terminated by \\0 passed to "
+                           "one of the klee_ functions");
+  }
+
+  return buf.str();
 }
 
 /****/
@@ -302,20 +306,6 @@ void SpecialFunctionHandler::handleSilentExit(ExecutionState &state,
                                               std::vector<ref<Expr> > &arguments) {
   assert(arguments.size()==1 && "invalid number of arguments to exit");
   executor.terminateState(state);
-}
-
-void SpecialFunctionHandler::handleAliasFunction(ExecutionState &state,
-						 KInstruction *target,
-						 std::vector<ref<Expr> > &arguments) {
-  assert(arguments.size()==2 && 
-         "invalid number of arguments to klee_alias_function");
-  std::string old_fn = readStringAtAddress(state, arguments[0]);
-  std::string new_fn = readStringAtAddress(state, arguments[1]);
-  KLEE_DEBUG_WITH_TYPE("alias_handling", llvm::errs() << "Replacing " << old_fn
-                                           << "() with " << new_fn << "()\n");
-  if (old_fn == new_fn)
-    state.removeFnAlias(old_fn);
-  else state.addFnAlias(old_fn, new_fn);
 }
 
 void SpecialFunctionHandler::handleAssert(ExecutionState &state,
@@ -373,16 +363,17 @@ void SpecialFunctionHandler::handleCloseMerge(ExecutionState &state,
   Instruction *i = target->inst;
 
   if (DebugLogMerge)
-    llvm::errs() << "close merge: " << &state << " at " << i << '\n';
+    llvm::errs() << "close merge: " << &state << " at [" << *i << "]\n";
 
   if (state.openMergeStack.empty()) {
     std::ostringstream warning;
     warning << &state << " ran into a close at " << i << " without a preceding open";
     klee_warning("%s", warning.str().c_str());
   } else {
-    assert(executor.inCloseMerge.find(&state) == executor.inCloseMerge.end() &&
+    assert(executor.mergingSearcher->inCloseMerge.find(&state) ==
+               executor.mergingSearcher->inCloseMerge.end() &&
            "State cannot run into close_merge while being closed");
-    executor.inCloseMerge.insert(&state);
+    executor.mergingSearcher->inCloseMerge.insert(&state);
     state.openMergeStack.back()->addClosedState(&state, i);
     state.openMergeStack.pop_back();
   }
@@ -432,6 +423,41 @@ void SpecialFunctionHandler::handleMalloc(ExecutionState &state,
   executor.executeAlloc(state, arguments[0], false, target);
 }
 
+void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
+                                            KInstruction *target,
+                                            std::vector<ref<Expr>> &arguments) {
+  if (arguments.size() != 2) {
+    executor.terminateStateOnError(state,
+      "Incorrect number of arguments to memalign(size_t alignment, size_t size)",
+      Executor::User);
+    return;
+  }
+
+  std::pair<ref<Expr>, ref<Expr>> alignmentRangeExpr =
+      executor.solver->getRange(state.constraints, arguments[0],
+                                state.queryMetaData);
+  ref<Expr> alignmentExpr = alignmentRangeExpr.first;
+  auto alignmentConstExpr = dyn_cast<ConstantExpr>(alignmentExpr);
+
+  if (!alignmentConstExpr) {
+    executor.terminateStateOnError(state,
+      "Could not determine size of symbolic alignment",
+      Executor::User);
+    return;
+  }
+
+  uint64_t alignment = alignmentConstExpr->getZExtValue();
+
+  // Warn, if the expression has more than one solution
+  if (alignmentRangeExpr.first != alignmentRangeExpr.second) {
+    klee_warning_once(
+        0, "Symbolic alignment for memalign. Choosing smallest alignment");
+  }
+
+  executor.executeAlloc(state, arguments[1], false, target, false, 0,
+                        alignment);
+}
+
 void SpecialFunctionHandler::handleAssume(ExecutionState &state,
                             KInstruction *target,
                             std::vector<ref<Expr> > &arguments) {
@@ -443,7 +469,8 @@ void SpecialFunctionHandler::handleAssume(ExecutionState &state,
     e = NeExpr::create(e, ConstantExpr::create(0, e->getWidth()));
   
   bool res;
-  bool success __attribute__ ((unused)) = executor.solver->mustBeFalse(state, e, res);
+  bool success __attribute__((unused)) = executor.solver->mustBeFalse(
+      state.constraints, e, res, state.queryMetaData);
   assert(success && "FIXME: Unhandled solver failure");
   if (res) {
     if (SilentKleeAssume) {
@@ -558,19 +585,20 @@ void SpecialFunctionHandler::handlePrintRange(ExecutionState &state,
   if (!isa<ConstantExpr>(arguments[1])) {
     // FIXME: Pull into a unique value method?
     ref<ConstantExpr> value;
-    bool success __attribute__ ((unused)) = executor.solver->getValue(state, arguments[1], value);
+    bool success __attribute__((unused)) = executor.solver->getValue(
+        state.constraints, arguments[1], value, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     bool res;
-    success = executor.solver->mustBeTrue(state, 
-                                          EqExpr::create(arguments[1], value), 
-                                          res);
+    success = executor.solver->mustBeTrue(state.constraints,
+                                          EqExpr::create(arguments[1], value),
+                                          res, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     if (res) {
       llvm::errs() << " == " << value;
     } else { 
       llvm::errs() << " ~= " << value;
-      std::pair< ref<Expr>, ref<Expr> > res =
-        executor.solver->getRange(state, arguments[1]);
+      std::pair<ref<Expr>, ref<Expr>> res = executor.solver->getRange(
+          state.constraints, arguments[1], state.queryMetaData);
       llvm::errs() << " (in [" << res.first << ", " << res.second <<"])";
     }
   }
@@ -832,12 +860,12 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
     // FIXME: Type coercion should be done consistently somewhere.
     bool res;
-    bool success __attribute__ ((unused)) =
-      executor.solver->mustBeTrue(*s, 
-                                  EqExpr::create(ZExtExpr::create(arguments[1],
-                                                                  Context::get().getPointerWidth()),
-                                                 mo->getSizeExpr()),
-                                  res);
+    bool success __attribute__((unused)) = executor.solver->mustBeTrue(
+        s->constraints,
+        EqExpr::create(
+            ZExtExpr::create(arguments[1], Context::get().getPointerWidth()),
+            mo->getSizeExpr()),
+        res, s->queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     
     if (res) {

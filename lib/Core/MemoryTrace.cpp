@@ -1,11 +1,11 @@
 #include "MemoryTrace.h"
 
+#include "ExecutionState.h"
 #include "InfiniteLoopDetectionFlags.h"
 #include "MemoryFingerprint.h"
 
-#include "klee/ExecutionState.h"
-#include "klee/Internal/Module/InstructionInfoTable.h"
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Module/InstructionInfoTable.h"
+#include "klee/Support/ErrorHandling.h"
 
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"

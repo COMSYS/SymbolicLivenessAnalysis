@@ -1,4 +1,4 @@
-// RUN: %llvmgcc -emit-llvm -g -c -o %t.bc %s
+// RUN: %clang -emit-llvm -g -c -o %t.bc %s
 // RUN: rm -rf %t.klee-out
 // RUN: %klee --output-dir=%t.klee-out --use-merge --debug-log-merge --use-incomplete-merge --debug-log-incomplete-merge --search=nurs:covnew --use-batching-search %t.bc 2>&1 | FileCheck %s
 // RUN: rm -rf %t.klee-out
@@ -21,7 +21,7 @@
 // It might occur that the random branch selection completes the heavy branch first,
 // which results in the branches being merged completely.
 
-#include <klee/klee.h>
+#include "klee/klee.h"
 
 int main(int argc, char **args) {
 

@@ -7,16 +7,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "klee/Expr.h"
-#include "klee/util/ExprVisitor.h"
+#include "klee/Expr/ExprVisitor.h"
+
+#include "klee/Expr/Expr.h"
 
 #include "llvm/Support/CommandLine.h"
 
 namespace {
-  llvm::cl::opt<bool>
-  UseVisitorHash("use-visitor-hash", 
-                 llvm::cl::desc("Use hash-consing during expr visitation."),
-                 llvm::cl::init(true));
+llvm::cl::opt<bool> UseVisitorHash(
+    "use-visitor-hash",
+    llvm::cl::desc(
+        "Use hash-consing during expression visitation (default=true)"),
+    llvm::cl::init(true), llvm::cl::cat(klee::ExprCat));
 }
 
 using namespace klee;

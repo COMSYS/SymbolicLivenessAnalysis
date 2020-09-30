@@ -7,67 +7,54 @@
 //
 //===----------------------------------------------------------------------===//
 #include "QueryLoggingSolver.h"
+
 #include "klee/Config/config.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Statistics.h"
-#ifdef HAVE_ZLIB_H
-#include "klee/Internal/Support/CompressionStream.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#endif
-
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-#include "llvm/Support/FileSystem.h"
-#endif
-
-using namespace klee::util;
+#include "klee/Support/OptionCategories.h"
+#include "klee/Statistics/Statistics.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/FileHandling.h"
+#include "klee/System/Time.h"
 
 namespace {
 llvm::cl::opt<bool> DumpPartialQueryiesEarly(
     "log-partial-queries-early", llvm::cl::init(false),
-    llvm::cl::desc("Log queries before calling the solver (default=off)"));
+    llvm::cl::desc("Log queries before calling the solver (default=false)"),
+    llvm::cl::cat(klee::SolvingCat));
 
 #ifdef HAVE_ZLIB_H
 llvm::cl::opt<bool> CreateCompressedQueryLog(
     "compress-query-log", llvm::cl::init(false),
-    llvm::cl::desc("Compress query log files (default=off)"));
+    llvm::cl::desc("Compress query log files (default=false)"),
+    llvm::cl::cat(klee::SolvingCat));
 #endif
-}
+} // namespace
 
 QueryLoggingSolver::QueryLoggingSolver(Solver *_solver, std::string path,
                                        const std::string &commentSign,
-                                       int queryTimeToLog)
-    : solver(_solver), os(0), BufferString(""), logBuffer(BufferString),
-      queryCount(0), minQueryTimeToLog(queryTimeToLog), startTime(0.0f),
-      lastQueryTime(0.0f), queryCommentSign(commentSign) {
+                                       time::Span queryTimeToLog,
+                                       bool logTimedOut)
+    : solver(_solver), BufferString(""), logBuffer(BufferString), queryCount(0),
+      minQueryTimeToLog(queryTimeToLog), logTimedOutQueries(logTimedOut),
+      queryCommentSign(commentSign) {
+  std::string error;
 #ifdef HAVE_ZLIB_H
   if (!CreateCompressedQueryLog) {
 #endif
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
-    std::error_code ec;
-    os = new llvm::raw_fd_ostream(path.c_str(), ec,
-                                  llvm::sys::fs::OpenFlags::F_Text);
-    if (ec)
-      ErrorInfo = ec.message();
-#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-    os = new llvm::raw_fd_ostream(path.c_str(), ErrorInfo,
-                                  llvm::sys::fs::OpenFlags::F_Text);
-#else
-    os = new llvm::raw_fd_ostream(path.c_str(), ErrorInfo);
-#endif
+    os = klee_open_output_file(path, error);
 #ifdef HAVE_ZLIB_H
   } else {
-    os = new compressed_fd_ostream((path + ".gz").c_str(), ErrorInfo);
-  }
-  if (ErrorInfo != "") {
-    klee_error("Could not open file %s : %s", path.c_str(), ErrorInfo.c_str());
+    path.append(".gz");
+    os = klee_open_compressed_output_file(path, error);
   }
 #endif
+  if (!os) {
+    klee_error("Could not open file %s : %s", path.c_str(), error.c_str());
+  }
   assert(0 != solver);
 }
 
 QueryLoggingSolver::~QueryLoggingSolver() {
   delete solver;
-  delete os;
 }
 
 void QueryLoggingSolver::flushBufferConditionally(bool writeToFile) {
@@ -95,13 +82,13 @@ void QueryLoggingSolver::startQuery(const Query &query, const char *typeName,
   if (DumpPartialQueryiesEarly) {
     flushBufferConditionally(true);
   }
-  startTime = getWallTime();
+  startTime = time::getWallTime();
 }
 
 void QueryLoggingSolver::finishQuery(bool success) {
-  lastQueryTime = getWallTime() - startTime;
+  lastQueryDuration = time::getWallTime() - startTime;
   logBuffer << queryCommentSign << "   " << (success ? "OK" : "FAIL") << " -- "
-            << "Elapsed: " << lastQueryTime << "\n";
+            << "Elapsed: " << lastQueryDuration << "\n";
 
   if (false == success) {
     logBuffer << queryCommentSign << "   Failure reason: "
@@ -111,21 +98,13 @@ void QueryLoggingSolver::finishQuery(bool success) {
 }
 
 void QueryLoggingSolver::flushBuffer() {
-  bool writeToFile = false;
-
-  if ((0 == minQueryTimeToLog) ||
-      (static_cast<int>(lastQueryTime * 1000) > minQueryTimeToLog)) {
-    // we either do not limit logging queries or the query time
-    // is larger than threshold (in ms)
-
-    if ((minQueryTimeToLog >= 0) ||
-        (SOLVER_RUN_STATUS_TIMEOUT ==
-         (solver->impl->getOperationStatusCode()))) {
-      // we do additional check here to log only timeouts in case
-      // user specified negative value for minQueryTimeToLog param
-      writeToFile = true;
-    }
-  }
+  // we either do not limit logging queries
+  // or the query time is larger than threshold
+  // or we log a timed out query
+  bool writeToFile = (!minQueryTimeToLog)
+      || (lastQueryDuration > minQueryTimeToLog)
+      || (logTimedOutQueries &&
+         (SOLVER_RUN_STATUS_TIMEOUT == solver->impl->getOperationStatusCode()));
 
   flushBufferConditionally(writeToFile);
 }
@@ -234,6 +213,6 @@ char *QueryLoggingSolver::getConstraintLog(const Query &query) {
   return solver->impl->getConstraintLog(query);
 }
 
-void QueryLoggingSolver::setCoreSolverTimeout(double timeout) {
+void QueryLoggingSolver::setCoreSolverTimeout(time::Span timeout) {
   solver->impl->setCoreSolverTimeout(timeout);
 }

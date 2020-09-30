@@ -1,14 +1,14 @@
 #include "MemoryState.h"
 
 #include "AddressSpace.h"
+#include "ExecutionState.h"
 #include "InfiniteLoopDetectionFlags.h"
 #include "Memory.h"
 
-#include "klee/ExecutionState.h"
-#include "klee/Internal/Module/Cell.h"
-#include "klee/Internal/Module/InstructionInfoTable.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Module/Cell.h"
+#include "klee/Module/InstructionInfoTable.h"
+#include "klee/Module/KModule.h"
+#include "klee/Support/ErrorHandling.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/BasicBlock.h"

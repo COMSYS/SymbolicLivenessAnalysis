@@ -8,7 +8,11 @@
 #===------------------------------------------------------------------------===#
 klee_add_component(kleaverExpr
   ArrayCache.cpp
-  Assigment.cpp
+  ArrayExprOptimizer.cpp
+  ArrayExprRewriter.cpp
+  ArrayExprVisitor.cpp
+  Assignment.cpp
+  AssignmentGenerator.cpp
   Constraints.cpp
   ExprBuilder.cpp
   Expr.cpp

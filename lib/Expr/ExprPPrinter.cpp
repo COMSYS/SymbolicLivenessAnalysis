@@ -7,10 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "klee/util/PrintContext.h"
-#include "klee/util/ExprPPrinter.h"
+#include "klee/Expr/ExprPPrinter.h"
 
-#include "klee/Constraints.h"
+#include "klee/Expr/Constraints.h"
+#include "klee/Support/OptionCategories.h"
+#include "klee/Support/PrintContext.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -21,21 +22,38 @@
 using namespace klee;
 
 namespace {
-  llvm::cl::opt<bool>
-  PCWidthAsArg("pc-width-as-arg", llvm::cl::init(true));
 
-  llvm::cl::opt<bool>
-  PCAllWidths("pc-all-widths", llvm::cl::init(false));
+llvm::cl::opt<bool> PCWidthAsArg(
+    "pc-width-as-arg", llvm::cl::init(true),
+    llvm::cl::desc(
+        "Print the width as a separate argument, as opposed to a prefix "
+        "to the operation (default=true)"),
+    llvm::cl::cat(klee::ExprCat));
 
-  llvm::cl::opt<bool>
-  PCPrefixWidth("pc-prefix-width", llvm::cl::init(true));
+llvm::cl::opt<bool>
+    PCAllWidths("pc-all-widths", llvm::cl::init(false),
+                llvm::cl::desc("Print the width of all operations, including "
+                               "booleans (default=false)"),
+                llvm::cl::cat(klee::ExprCat));
 
-  llvm::cl::opt<bool>
-  PCMultibyteReads("pc-multibyte-reads", llvm::cl::init(true));
+llvm::cl::opt<bool>
+    PCPrefixWidth("pc-prefix-width", llvm::cl::init(true),
+                  llvm::cl::desc("Print width with 'w' prefix (default=true)"),
+                  llvm::cl::cat(klee::ExprCat));
 
-  llvm::cl::opt<bool>
-  PCAllConstWidths("pc-all-const-widths",  llvm::cl::init(false));
-}
+llvm::cl::opt<bool>
+    PCMultibyteReads("pc-multibyte-reads", llvm::cl::init(true),
+                     llvm::cl::desc("Print ReadLSB and ReadMSB expressions "
+                                    "when possible (default=true)"),
+                     llvm::cl::cat(klee::ExprCat));
+
+llvm::cl::opt<bool> PCAllConstWidths(
+    "pc-all-const-widths", llvm::cl::init(false),
+    llvm::cl::desc(
+        "Always print the width of constant expressions (default=false)"),
+    llvm::cl::cat(klee::ExprCat));
+
+} // namespace
 
 class PPrinter : public ExprPPrinter {
 public:
@@ -74,7 +92,8 @@ private:
     if (isVerySimple(e)) {
       return true;
     } else if (const ReadExpr *re = dyn_cast<ReadExpr>(e)) {
-      return isVerySimple(re->index) && isVerySimpleUpdate(re->updates.head);
+      return isVerySimple(re->index) &&
+             isVerySimpleUpdate(re->updates.head.get());
     } else {
       Expr *ep = e.get();
       for (unsigned i=0; i<ep->getNumKids(); i++)
@@ -95,7 +114,7 @@ private:
     // FIXME: This needs to be non-recursive.
     if (un) {
       if (couldPrintUpdates.insert(un).second) {
-        scanUpdate(un->next);
+        scanUpdate(un->next.get());
         scan1(un->index);
         scan1(un->value);
       } else {
@@ -112,7 +131,7 @@ private:
           scan1(ep->getKid(i));
         if (const ReadExpr *re = dyn_cast<ReadExpr>(e)) {
           usedArrays.insert(re->updates.root);
-          scanUpdate(re->updates.head);
+          scanUpdate(re->updates.head.get());
         }
       } else {
         shouldPrint.insert(e);
@@ -121,10 +140,10 @@ private:
   }
 
   void printUpdateList(const UpdateList &updates, PrintContext &PC) {
-    const UpdateNode *head = updates.head;
+    auto head = updates.head;
 
     // Special case empty list.
-    if (!head) {
+    if (head.isNull()) {
       // FIXME: We need to do something (assert, mangle, etc.) so that printing
       // distinct arrays with the same name doesn't fail.
       PC << updates.root->name;
@@ -139,22 +158,22 @@ private:
     // We only have to print the most recent update
     std::vector<ref<Expr>> prevUpdate;
 
-    for (const UpdateNode *un = head; un; un = un->next) {      
+    for (auto un = head; !un.isNull(); un = un->next) {
       // We are done if we hit the cache.
-      std::map<const UpdateNode*, unsigned>::iterator it = 
-        updateBindings.find(un);
+      std::map<const UpdateNode *, unsigned>::iterator it =
+          updateBindings.find(un.get());
       if (it!=updateBindings.end()) {
         if (openedList)
           PC << "] @ ";
         PC << "U" << it->second;
         return;
-      } else if (!hasScan || shouldPrintUpdates.count(un)) {
+      } else if (!hasScan || shouldPrintUpdates.count(un.get())) {
         if (openedList)
           PC << "] @";
         if (un != head)
           PC.breakLine(outerIndent);
-        PC << "U" << updateCounter << ":"; 
-        updateBindings.insert(std::make_pair(un, updateCounter++));
+        PC << "U" << updateCounter << ":";
+        updateBindings.insert(std::make_pair(un.get(), updateCounter++));
         openedList = nextShouldBreak = false;
      }
     
@@ -462,7 +481,7 @@ void ExprPPrinter::printSingleExpr(llvm::raw_ostream &os, const ref<Expr> &e) {
 }
 
 void ExprPPrinter::printConstraints(llvm::raw_ostream &os,
-                                    const ConstraintManager &constraints) {
+                                    const ConstraintSet &constraints) {
   printQuery(os, constraints, ConstantExpr::alloc(false, Expr::Bool));
 }
 
@@ -476,7 +495,7 @@ struct ArrayPtrsByName {
 }
 
 void ExprPPrinter::printQuery(llvm::raw_ostream &os,
-                              const ConstraintManager &constraints,
+                              const ConstraintSet &constraints,
                               const ref<Expr> &q,
                               const ref<Expr> *evalExprsBegin,
                               const ref<Expr> *evalExprsEnd,
@@ -484,10 +503,9 @@ void ExprPPrinter::printQuery(llvm::raw_ostream &os,
                               const Array * const *evalArraysEnd,
                               bool printArrayDecls) {
   PPrinter p(os);
-  
-  for (ConstraintManager::const_iterator it = constraints.begin(),
-         ie = constraints.end(); it != ie; ++it)
-    p.scan(*it);
+
+  for (const auto &constraint : constraints)
+    p.scan(constraint);
   p.scan(q);
 
   for (const ref<Expr> *it = evalExprsBegin; it != evalExprsEnd; ++it)
@@ -527,8 +545,7 @@ void ExprPPrinter::printQuery(llvm::raw_ostream &os,
   
   // Ident at constraint list;
   unsigned indent = PC.pos;
-  for (ConstraintManager::const_iterator it = constraints.begin(),
-         ie = constraints.end(); it != ie;) {
+  for (auto it = constraints.begin(), ie = constraints.end(); it != ie;) {
     p.print(*it, PC);
     ++it;
     if (it != ie)

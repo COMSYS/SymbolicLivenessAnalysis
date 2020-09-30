@@ -10,6 +10,9 @@
 #include "Passes.h"
 
 #include "klee/Config/Version.h"
+#include "klee/Support/ErrorHandling.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -18,6 +21,9 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(10, 0)
+#include "llvm/IR/IntrinsicsX86.h"
+#endif
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Pass.h"
@@ -53,9 +59,17 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
     // increment now since deletion of instructions makes iterator invalid.
     ++i;
     if (ii) {
+      if (isa<DbgInfoIntrinsic>(ii))
+        continue;
+
       switch (ii->getIntrinsicID()) {
       case Intrinsic::vastart:
       case Intrinsic::vaend:
+      case Intrinsic::fabs:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(7, 0)
+      case Intrinsic::fshr:
+      case Intrinsic::fshl:
+#endif
         break;
 
         // Lower vacopy so that object resolution etc is handled by
@@ -86,16 +100,12 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
           Builder.CreateStore(val, pDst, ii);
 
           auto off = ConstantInt::get(Type::getInt64Ty(ctx), 1);
-          pDst = Builder.CreateGEP(KLEE_LLVM_GEP_TYPE(nullptr) pDst, off,
-                                   std::string());
-          pSrc = Builder.CreateGEP(KLEE_LLVM_GEP_TYPE(nullptr) pSrc, off,
-                                   std::string());
+          pDst = Builder.CreateGEP(nullptr, pDst, off, std::string());
+          pSrc = Builder.CreateGEP(nullptr, pSrc, off, std::string());
           val = Builder.CreateLoad(pSrc, std::string());
           Builder.CreateStore(val, pDst);
-          pDst = Builder.CreateGEP(KLEE_LLVM_GEP_TYPE(nullptr) pDst, off,
-                                   std::string());
-          pSrc = Builder.CreateGEP(KLEE_LLVM_GEP_TYPE(nullptr) pSrc, off,
-                                   std::string());
+          pDst = Builder.CreateGEP(nullptr, pDst, off, std::string());
+          pSrc = Builder.CreateGEP(nullptr, pSrc, off, std::string());
           val = Builder.CreateLoad(pSrc, std::string());
           Builder.CreateStore(val, pDst);
         }
@@ -110,11 +120,7 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
       case Intrinsic::uadd_with_overflow:
       case Intrinsic::usub_with_overflow:
       case Intrinsic::umul_with_overflow: {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
         IRBuilder<> builder(ii->getParent(), ii->getIterator());
-#else
-        IRBuilder<> builder(ii->getParent(), ii);
-#endif
 
         Value *op1 = ii->getArgOperand(0);
         Value *op2 = ii->getArgOperand(1);
@@ -195,63 +201,212 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
         dirty = true;
         break;
       }
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+      case Intrinsic::sadd_sat:
+      case Intrinsic::ssub_sat:
+      case Intrinsic::uadd_sat:
+      case Intrinsic::usub_sat: {
+        IRBuilder<> builder(ii);
 
-      case Intrinsic::dbg_value:
-      case Intrinsic::dbg_declare: {
-        // Remove these regardless of lower intrinsics flag. This can
-        // be removed once IntrinsicLowering is fixed to not have bad
-        // caches.
+        Value *op1 = ii->getArgOperand(0);
+        Value *op2 = ii->getArgOperand(1);
+
+        unsigned int bw = op1->getType()->getPrimitiveSizeInBits();
+        assert(bw == op2->getType()->getPrimitiveSizeInBits());
+
+        Value *overflow = nullptr;
+        Value *result = nullptr;
+        Value *saturated = nullptr;
+        switch(ii->getIntrinsicID()) {
+          case Intrinsic::usub_sat:
+            result = builder.CreateSub(op1, op2);
+            overflow = builder.CreateICmpULT(op1, op2); // a < b  =>  a - b < 0
+            saturated = ConstantInt::get(ctx, APInt(bw, 0));
+            break;
+          case Intrinsic::uadd_sat:
+            result = builder.CreateAdd(op1, op2);
+            overflow = builder.CreateICmpULT(result, op1); // a + b < a
+            saturated = ConstantInt::get(ctx, APInt::getMaxValue(bw));
+            break;
+          case Intrinsic::ssub_sat:
+          case Intrinsic::sadd_sat: {
+            if (ii->getIntrinsicID() == Intrinsic::ssub_sat) {
+              result = builder.CreateSub(op1, op2);
+            } else {
+              result = builder.CreateAdd(op1, op2);
+            }
+            ConstantInt *zero = ConstantInt::get(ctx, APInt(bw, 0));
+            ConstantInt *smin = ConstantInt::get(ctx, APInt::getSignedMinValue(bw));
+            ConstantInt *smax = ConstantInt::get(ctx, APInt::getSignedMaxValue(bw));
+
+            Value *sign1 = builder.CreateICmpSLT(op1, zero);
+            Value *sign2 = builder.CreateICmpSLT(op2, zero);
+            Value *signR = builder.CreateICmpSLT(result, zero);
+
+            if (ii->getIntrinsicID() == Intrinsic::ssub_sat) {
+              saturated = builder.CreateSelect(sign2, smax, smin);
+            } else {
+              saturated = builder.CreateSelect(sign2, smin, smax);
+            }
+
+            // The sign of the result differs from the sign of the first operand
+            overflow = builder.CreateXor(sign1, signR);
+            if (ii->getIntrinsicID() == Intrinsic::ssub_sat) {
+              // AND the signs of the operands differ
+              overflow = builder.CreateAnd(overflow, builder.CreateXor(sign1, sign2));
+            } else {
+              // AND the signs of the operands are the same
+              overflow = builder.CreateAnd(overflow, builder.CreateNot(builder.CreateXor(sign1, sign2)));
+            }
+            break;
+          }
+          default: ;
+        }
+
+        result = builder.CreateSelect(overflow, saturated, result);
+        ii->replaceAllUsesWith(result);
         ii->eraseFromParent();
         dirty = true;
         break;
       }
+#endif
 
       case Intrinsic::trap: {
         // Intrinsic instruction "llvm.trap" found. Directly lower it to
         // a call of the abort() function.
-        Function *F = cast<Function>(
-            M.getOrInsertFunction("abort", Type::getVoidTy(ctx), NULL));
-        F->setDoesNotReturn();
-        F->setDoesNotThrow();
+        auto C = M.getOrInsertFunction("abort", Type::getVoidTy(ctx)
+                                                    KLEE_LLVM_GOIF_TERMINATOR);
+#if LLVM_VERSION_CODE >= LLVM_VERSION(9, 0)
+        if (auto *F = dyn_cast<Function>(C.getCallee())) {
+#else
+        if (auto *F = dyn_cast<Function>(C)) {
+#endif
+          F->setDoesNotReturn();
+          F->setDoesNotThrow();
+        }
 
         llvm::IRBuilder<> Builder(ii);
-        Builder.CreateCall(F);
+        Builder.CreateCall(C);
         Builder.CreateUnreachable();
 
-        ii->eraseFromParent();
+        i = ii->eraseFromParent();
+
+        // check if the instruction after the one we just replaced is not the
+        // end of the basic block and if it is not (i.e. it is a valid
+        // instruction), delete it and all remaining because the cleaner just
+        // introduced a terminating instruction (unreachable) otherwise llvm will
+        // assert in Verifier::visitTerminatorInstr
+        while (i != ie) { // i was already incremented above.
+          i = i->eraseFromParent();
+        }
 
         dirty = true;
         break;
       }
       case Intrinsic::objectsize: {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+        // Lower the call to a concrete value
+        auto replacement = llvm::lowerObjectSizeCall(ii, DataLayout, nullptr,
+                                                     /*MustSucceed=*/true);
+#else
         // We don't know the size of an object in general so we replace
         // with 0 or -1 depending on the second argument to the intrinsic.
         assert(ii->getNumArgOperands() == 2 && "wrong number of arguments");
-        Value *minArg = ii->getArgOperand(1);
-        assert(minArg && "Failed to get second argument");
-        ConstantInt *minArgAsInt = dyn_cast<ConstantInt>(minArg);
-        assert(minArgAsInt && "Second arg is not a ConstantInt");
-        assert(minArgAsInt->getBitWidth() == 1 &&
-               "Second argument is not an i1");
-        Value *replacement = NULL;
+        auto minArg = dyn_cast_or_null<ConstantInt>(ii->getArgOperand(1));
+        assert(minArg &&
+               "Failed to get second argument or it is not ConstantInt");
+        assert(minArg->getBitWidth() == 1 && "Second argument is not an i1");
+        ConstantInt *replacement = nullptr;
         IntegerType *intType = dyn_cast<IntegerType>(ii->getType());
         assert(intType && "intrinsic does not have integer return type");
-        if (minArgAsInt->isZero()) {
+        if (minArg->isZero()) {
           // min=false
           replacement = ConstantInt::get(intType, -1, /*isSigned=*/true);
         } else {
           // min=true
           replacement = ConstantInt::get(intType, 0, /*isSigned=*/false);
         }
+
+#endif
         ii->replaceAllUsesWith(replacement);
         ii->eraseFromParent();
         dirty = true;
         break;
       }
-      default:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+      case Intrinsic::is_constant: {
+        if(auto* constant = llvm::ConstantFoldInstruction(ii, ii->getModule()->getDataLayout()))
+          ii->replaceAllUsesWith(constant);
+        else
+          ii->replaceAllUsesWith(ConstantInt::getFalse(ii->getType()));
+        ii->eraseFromParent();
+        dirty = true;
+        break;
+      }
+#endif
+
+      // The following intrinsics are currently handled by LowerIntrinsicCall
+      // (Invoking LowerIntrinsicCall with any intrinsics not on this
+      // list throws an exception.)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+      case Intrinsic::addressofreturnaddress:
+#endif
+      case Intrinsic::annotation:
+      case Intrinsic::assume:
+      case Intrinsic::bswap:
+      case Intrinsic::ceil:
+      case Intrinsic::copysign:
+      case Intrinsic::cos:
+      case Intrinsic::ctlz:
+      case Intrinsic::ctpop:
+      case Intrinsic::cttz:
+      case Intrinsic::dbg_declare:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(7, 0)
+      case Intrinsic::dbg_label:
+#endif
+      case Intrinsic::eh_typeid_for:
+      case Intrinsic::exp2:
+      case Intrinsic::exp:
+      case Intrinsic::expect:
+      case Intrinsic::floor:
+      case Intrinsic::flt_rounds:
+      case Intrinsic::frameaddress:
+      case Intrinsic::get_dynamic_area_offset:
+      case Intrinsic::invariant_end:
+      case Intrinsic::invariant_start:
+      case Intrinsic::lifetime_end:
+      case Intrinsic::lifetime_start:
+      case Intrinsic::log10:
+      case Intrinsic::log2:
+      case Intrinsic::log:
+      case Intrinsic::memcpy:
+      case Intrinsic::memmove:
+      case Intrinsic::memset:
+      case Intrinsic::not_intrinsic:
+      case Intrinsic::pcmarker:
+      case Intrinsic::pow:
+      case Intrinsic::prefetch:
+      case Intrinsic::ptr_annotation:
+      case Intrinsic::readcyclecounter:
+      case Intrinsic::returnaddress:
+      case Intrinsic::round:
+      case Intrinsic::sin:
+      case Intrinsic::sqrt:
+      case Intrinsic::stackrestore:
+      case Intrinsic::stacksave:
+      case Intrinsic::trunc:
+      case Intrinsic::var_annotation:
         IL->LowerIntrinsicCall(ii);
         dirty = true;
         break;
+
+        // Warn about any unrecognized intrinsics.
+      default: {
+        const Function *Callee = ii->getCalledFunction();
+        llvm::StringRef name = Callee->getName();
+        klee_warning_once((void*)Callee, "unsupported intrinsic %.*s", (int)name.size(), name.data());
+        break;
+      }
       }
     }
   }

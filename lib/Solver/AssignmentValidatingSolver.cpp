@@ -6,10 +6,12 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-#include "klee/util/Assignment.h"
-#include "klee/Constraints.h"
-#include "klee/Solver.h"
-#include "klee/SolverImpl.h"
+
+#include "klee/Expr/Constraints.h"
+#include "klee/Expr/Assignment.h"
+#include "klee/Solver/Solver.h"
+#include "klee/Solver/SolverImpl.h"
+
 #include <vector>
 
 namespace klee {
@@ -32,7 +34,7 @@ public:
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
   char *getConstraintLog(const Query &);
-  void setCoreSolverTimeout(double timeout);
+  void setCoreSolverTimeout(time::Span timeout);
 };
 
 // TODO: use computeInitialValues for all queries for more stress testing
@@ -61,10 +63,7 @@ bool AssignmentValidatingSolver::computeInitialValues(
   // we can't compute a constant and flag this as a problem.
   Assignment assignment(objects, values, /*_allowFreeValues=*/true);
   // Check computed assignment satisfies query
-  for (ConstraintManager::const_iterator it = query.constraints.begin(),
-                                         ie = query.constraints.end();
-       it != ie; ++it) {
-    ref<Expr> constraint = *it;
+  for (const auto &constraint : query.constraints) {
     ref<Expr> constraintEvaluated = assignment.evaluate(constraint);
     ConstantExpr *CE = dyn_cast<ConstantExpr>(constraintEvaluated);
     if (CE == NULL) {
@@ -122,16 +121,13 @@ void AssignmentValidatingSolver::dumpAssignmentQuery(
     const Query &query, const Assignment &assignment) {
   // Create a Query that is augmented with constraints that
   // enforce the given assignment.
-  std::vector<ref<Expr> > constraints;
-  assignment.createConstraintsFromAssignment(constraints);
+  auto constraints = assignment.createConstraintsFromAssignment();
+
   // Add Constraints from `query`
-  for (ConstraintManager::const_iterator it = query.constraints.begin(),
-                                         ie = query.constraints.end();
-       it != ie; ++it) {
-    constraints.push_back(*it);
-  }
-  ConstraintManager augmentedConstraints(constraints);
-  Query augmentedQuery(augmentedConstraints, query.expr);
+  for (const auto &constraint : query.constraints)
+    constraints.push_back(constraint);
+
+  Query augmentedQuery(constraints, query.expr);
 
   // Ask the solver for the log for this query.
   char *logText = solver->getConstraintLog(augmentedQuery);
@@ -148,7 +144,7 @@ char *AssignmentValidatingSolver::getConstraintLog(const Query &query) {
   return solver->impl->getConstraintLog(query);
 }
 
-void AssignmentValidatingSolver::setCoreSolverTimeout(double timeout) {
+void AssignmentValidatingSolver::setCoreSolverTimeout(time::Span timeout) {
   return solver->impl->setCoreSolverTimeout(timeout);
 }
 

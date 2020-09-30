@@ -1,7 +1,7 @@
 #include "MemoryFingerprint.h"
 
-#include "klee/Internal/Module/KModule.h"
-#include "klee/util/ExprPPrinter.h"
+#include "klee/Expr/ExprPPrinter.h"
+#include "klee/Module/KModule.h"
 
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DebugLoc.h"

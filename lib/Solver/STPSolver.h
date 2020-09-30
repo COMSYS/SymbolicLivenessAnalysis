@@ -11,7 +11,7 @@
 #ifndef KLEE_STPSOLVER_H
 #define KLEE_STPSOLVER_H
 
-#include "klee/Solver.h"
+#include "klee/Solver/Solver.h"
 
 namespace klee {
 /// STPSolver - A complete solver based on STP.
@@ -32,7 +32,7 @@ public:
   /// setCoreSolverTimeout - Set constraint solver timeout delay to the given
   /// value; 0
   /// is off.
-  virtual void setCoreSolverTimeout(double timeout);
+  virtual void setCoreSolverTimeout(time::Span timeout);
 };
 }
 

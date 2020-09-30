@@ -1,11 +1,11 @@
-// RUN: %llvmgcc -emit-llvm -g -c -o %t.bc %s
+// RUN: %clang -emit-llvm -g -c -o %t.bc %s
 // RUN: rm -rf %t.klee-out
 // RUN: %klee --output-dir=%t.klee-out --use-merge --search=nurs:covnew --max-time=2 %t.bc
 
 // CHECK: ran into a close at
 // CHECK: generated tests = 2{{$}}
 
-#include <klee/klee.h>
+#include "klee/klee.h"
 
 int main(int argc, char **args) {
 
