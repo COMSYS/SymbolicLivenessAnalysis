@@ -56,6 +56,6 @@ target_link_libraries(kleeModule PRIVATE
 klee_add_llvm_loadable_module(LiveRegister
   LiveRegister.cpp
 
-  #  PLUGIN_TOOL
-  #  opt
+  PLUGIN_TOOL
+  opt
 )
