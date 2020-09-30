@@ -160,7 +160,7 @@ public:
 public:
   #ifdef KLEE_UNITTEST
   // provide this function only in the context of unittests
-  ExecutionState() {}
+  ExecutionState() : memoryState(this) {}
   #endif
   // only to create the initial state
   explicit ExecutionState(KFunction *kf);
