@@ -1,7 +1,7 @@
-// RUN: %llvmgcc %s -emit-llvm -O0 -g -c -o %t-O0.bc
-// RUN: %llvmgcc %s -emit-llvm -O1 -g -c -o %t-O1.bc
-// RUN: %llvmgcc %s -emit-llvm -O2 -g -c -o %t-O2.bc
-// RUN: %llvmgcc %s -emit-llvm -O3 -g -c -o %t-O3.bc
+// RUN: %clang %s -emit-llvm -O0 -g -c -o %t-O0.bc
+// RUN: %clang %s -emit-llvm -O1 -g -c -o %t-O1.bc
+// RUN: %clang %s -emit-llvm -O2 -g -c -o %t-O2.bc
+// RUN: %clang %s -emit-llvm -O3 -g -c -o %t-O3.bc
 
 // TODO: check if difference between line 65 and 68 is significat or due to debug info
 

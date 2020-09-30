@@ -1,7 +1,7 @@
 ; RUN: llvm-as %s -f -o %t.bc
 
 ; RUN: rm -rf %t.klee-out
-; RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t.klee-out -detect-infinite-loops -stop-after-n-instructions=10000 -allocate-determ -disable-opt %t.bc > %t.log 2>&1
+; RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t.klee-out -detect-infinite-loops -max-instructions=10000 -allocate-determ -optimize=false %t.bc > %t.log 2>&1
 ; RUN: cat %t.log | FileCheck %s
 ; RUN: not test -f %t.klee-out/test000001.infty.err
 
