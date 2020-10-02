@@ -355,6 +355,8 @@ LiveRegisterPass::transition(const Instruction *i, const valueset_t &set) {
 
 const Instruction *
 LiveRegisterPass::getLastPHIInstruction(const BasicBlock &BB) {
+  // we cannot use getFirstNonPHI() (or similar) because of NOP instruction
+
   auto it = BB.begin();
   auto ie = BB.end();
   bool firstIsPHI = (it->getOpcode() == Instruction::PHI);
