@@ -9,15 +9,9 @@
 
 #include "Passes.h"
 
-#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/InstIterator.h"
-#else
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/InstIterator.h"
-#endif
-
-#include "llvm/ADT/SetOperations.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/User.h"
 #include "llvm/Support/raw_ostream.h"
@@ -212,12 +206,8 @@ void LiveRegisterPass::propagatePhiUseToLiveSet(const Function &F) {
     // propagated into its live set. Here, we simply insert all values that are
     // used by PHI nodes into the terminator instruction's live set.
     for (const Value *value : termGen) {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-      for (auto i = value->user_begin(), e = value->user_end(); i != e; ++i) {
-#else
-      for (auto i = value->use_begin(), e = value->use_end(); i != e; ++i) {
-#endif
-        if (const Instruction *inst = dyn_cast<Instruction>(*i)) {
+      for (const User *user : value->users()) {
+        if (const Instruction *inst = dyn_cast<Instruction>(user)) {
           if (inst->getOpcode() == Instruction::PHI) {
             // found usage (of value in gen set) by a PHI node
             termLive.insert(value);
