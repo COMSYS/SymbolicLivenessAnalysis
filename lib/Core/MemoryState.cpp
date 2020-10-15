@@ -576,9 +576,9 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock *bb) {
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: Register BasicBlock "
-                 << bb->getName() << " [fingerprint: "
-                 << fingerprint.getFingerprintAsString() << "]\n";
+    llvm::errs() << "MemoryState: Register BasicBlock " << bb->getName()
+                 << " [fingerprint: " << fingerprint.getFingerprintAsString()
+                 << "]\n";
   }
 
   if (!InfiniteLoopDetectionDisableLiveVariableAnalysis) {
@@ -827,7 +827,8 @@ void MemoryState::leaveMemoryFunction() {
 
 void MemoryState::registerPushFrame(const KFunction *kf) {
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: PUSHFRAME\n";
+    llvm::errs() << "MemoryState: PUSHFRAME (" << kf->function->getName()
+                 << ")\n";
   }
 
   trace.registerEndOfStackFrame(kf,
@@ -851,7 +852,9 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
   // IMPORTANT: has to be called prior to state.popFrame()
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: POPFRAME\n"
+    llvm::errs() << "MemoryState: POPFRAME ("
+                 << returningBB->getParent()->getName() << " returning to "
+                 << callerBB->getParent()->getName() << ")\n"
                  << "Fingerprint: " << fingerprint.getFingerprintAsString()
                  << "\n";
   }
