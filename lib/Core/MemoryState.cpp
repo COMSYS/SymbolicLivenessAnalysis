@@ -6,8 +6,8 @@
 
 #include "klee/Module/Cell.h"
 #include "klee/Module/InstructionInfoTable.h"
-#include "klee/Module/KModule.h"
 #include "klee/Module/KInstruction.h"
+#include "klee/Module/KModule.h"
 #include "klee/Support/ErrorHandling.h"
 #include "klee/Support/InfiniteLoopDetectionFlags.h"
 
@@ -30,70 +30,67 @@ std::vector<llvm::Function *> MemoryState::libraryFunctionsList;
 std::vector<llvm::Function *> MemoryState::memoryFunctionsList;
 
 void MemoryState::setKModule(KModule *_kmodule) {
-  if (kmodule != nullptr) return;
+  if (kmodule != nullptr)
+    return;
 
   // whitelist: output functions
-  const char* outputFunctions[] = {
-    // stdio.h
-    "fflush", "fputc", "putc", "fputwc", "putwc", "fputs", "fputws", "putchar",
-    "putwchar", "puts", "printf", "fprintf", "sprintf", "snprintf", "wprintf",
-    "fwprintf", "swprintf", "vprintf", "vfprintf", "vsprintf", "vsnprintf",
-    "vwprintf", "vfwprintf", "vswprintf", "perror",
+  const char *outputFunctions[] = {
+      // stdio.h
+      "fflush", "fputc", "putc", "fputwc", "putwc", "fputs", "fputws",
+      "putchar", "putwchar", "puts", "printf", "fprintf", "sprintf", "snprintf",
+      "wprintf", "fwprintf", "swprintf", "vprintf", "vfprintf", "vsprintf",
+      "vsnprintf", "vwprintf", "vfwprintf", "vswprintf", "perror",
 
-    // POSIX
-    "write"
-  };
+      // POSIX
+      "write"};
 
   // blacklist: input functions
-  const char* inputFunctions[] = {
-    // stdio.h
-    "fopen", "freopen", "fread", "fgetc", "getc", "fgetwc", "getwc", "fgets",
-    "fgetws", "getchar", "getwchar", "gets", "scanf", "fscanf", "sscanf",
-    "wscanf", "fwscanf", "swscanf", "vscanf", "vfscanf", "vsscanf", "vwscanf",
-    "vfwscanf", "vswscanf", "ftell", "ftello", "fseek", "fseeko", "fgetpos",
-    "fsetpos", "feof", "ferror",
+  const char *inputFunctions[] = {
+      // stdio.h
+      "fopen", "freopen", "fread", "fgetc", "getc", "fgetwc", "getwc", "fgets",
+      "fgetws", "getchar", "getwchar", "gets", "scanf", "fscanf", "sscanf",
+      "wscanf", "fwscanf", "swscanf", "vscanf", "vfscanf", "vsscanf", "vwscanf",
+      "vfwscanf", "vswscanf", "ftell", "ftello", "fseek", "fseeko", "fgetpos",
+      "fsetpos", "feof", "ferror",
 
-    // POSIX
-    "open", "creat", "socket", "accept", "socketpair", "pipe", "opendir",
-    "dirfd", "fileno", "read", "readv", "pread", "recv", "recvmsg", "lseek",
-    "fstat", "fdopen", "ftruncate", "fsync", "fdatasync", "fstatvfs",
-    "select", "pselect", "poll", "epoll", "flock", "fcntl", "lockf",
+      // POSIX
+      "open", "creat", "socket", "accept", "socketpair", "pipe", "opendir",
+      "dirfd", "fileno", "read", "readv", "pread", "recv", "recvmsg", "lseek",
+      "fstat", "fdopen", "ftruncate", "fsync", "fdatasync", "fstatvfs",
+      "select", "pselect", "poll", "epoll", "flock", "fcntl", "lockf",
 
-    // dirent.h
-    "opendir", "readdir", "readdir_r", "telldir",
+      // dirent.h
+      "opendir", "readdir", "readdir_r", "telldir",
 
-    // future POSIX
-    "openat", "faccessat", "fstatat", "readlinkat", "fdopendir",
+      // future POSIX
+      "openat", "faccessat", "fstatat", "readlinkat", "fdopendir",
 
-    // LFS
-    "fgetpos64", "fopen64", "freopen64", "fseeko64", "fsetpos64", "ftello64",
-    "fstat64", "lstat64", "open64", "readdir64", "stat64"
-  };
+      // LFS
+      "fgetpos64", "fopen64", "freopen64", "fseeko64", "fsetpos64", "ftello64",
+      "fstat64", "lstat64", "open64", "readdir64", "stat64"};
 
   // library function that might use heavy loops that we do not want to inspect
-  const char* libraryFunctions[] = {
-    // string.h
-    "memcmp", "memchr", "strcpy", "strncpy", "strcat", "strncat", "strxfrm",
-    "strlen", "strcmp", "strncmp", "strcoll", "strchr", "strrchr", "strspn",
-    "strcspn", "strpbrk", "strstr",
+  const char *libraryFunctions[] = {
+      // string.h
+      "memcmp", "memchr", "strcpy", "strncpy", "strcat", "strncat", "strxfrm",
+      "strlen", "strcmp", "strncmp", "strcoll", "strchr", "strrchr", "strspn",
+      "strcspn", "strpbrk", "strstr",
 
-    // wchar.h
-    "wmemcmp", "wmemchr", "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcsxfrm",
-    "wcslen", "wcscmp", "wcsncmp", "wcscoll", "wcschr", "wcsrchr", "wcsspn",
-    "wcscspn", "wcspbrk", "wcsstr",
+      // wchar.h
+      "wmemcmp", "wmemchr", "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcsxfrm",
+      "wcslen", "wcscmp", "wcsncmp", "wcscoll", "wcschr", "wcsrchr", "wcsspn",
+      "wcscspn", "wcspbrk", "wcsstr",
 
-    // GNU
-    "mempcpy",
+      // GNU
+      "mempcpy",
 
-    // POSIX
-    "strdup", "strcasecmp", "memccpy", "bzero"
-  };
+      // POSIX
+      "strdup", "strcasecmp", "memccpy", "bzero"};
 
   // library functions with signature (*dest, _, count) that modify the memory
   // starting from dest for count bytes
-  const char* memoryFunctions[] = {
-    "memset", "memcpy", "memmove", "wmemset", "wmemcpy", "wmemmove"
-  };
+  const char *memoryFunctions[] = {"memset",  "memcpy",  "memmove",
+                                   "wmemset", "wmemcpy", "wmemmove"};
 
   initializeFunctionList(_kmodule, outputFunctions, outputFunctionsWhitelist);
   initializeFunctionList(_kmodule, inputFunctions, inputFunctionsBlacklist);
@@ -105,7 +102,7 @@ void MemoryState::setKModule(KModule *_kmodule) {
 
 template <std::size_t array_size>
 void MemoryState::initializeFunctionList(KModule *_kmodule,
-                                         const char* (& functions)[array_size],
+                                         const char *(&functions)[array_size],
                                          std::vector<llvm::Function *> &list) {
   std::vector<llvm::Function *> tmp;
   for (const char *name : functions) {
@@ -117,8 +114,8 @@ void MemoryState::initializeFunctionList(KModule *_kmodule,
       }
     } else {
       if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-        llvm::errs() << "MemoryState: found function in module: "
-                     << name << "\n";
+        llvm::errs() << "MemoryState: found function in module: " << name
+                     << "\n";
       }
       tmp.emplace_back(f);
     }
@@ -126,7 +123,6 @@ void MemoryState::initializeFunctionList(KModule *_kmodule,
   std::sort(tmp.begin(), tmp.end());
   list = std::move(tmp);
 }
-
 
 void MemoryState::registerFunctionCall(llvm::Function *f,
                                        std::vector<ref<Expr>> &arguments) {
@@ -137,8 +133,7 @@ void MemoryState::registerFunctionCall(llvm::Function *f,
   }
 
   if (std::binary_search(inputFunctionsBlacklist.begin(),
-                         inputFunctionsBlacklist.end(),
-                         f)) {
+                         inputFunctionsBlacklist.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: blacklisted input function call to "
                    << f->getName() << "()\n";
@@ -146,24 +141,21 @@ void MemoryState::registerFunctionCall(llvm::Function *f,
     clearEverything();
     enterListedFunction(f);
   } else if (std::binary_search(outputFunctionsWhitelist.begin(),
-                                outputFunctionsWhitelist.end(),
-                                f)) {
+                                outputFunctionsWhitelist.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: whitelisted output function call to "
                    << f->getName() << "()\n";
     }
     enterListedFunction(f);
   } else if (std::binary_search(libraryFunctionsList.begin(),
-                                libraryFunctionsList.end(),
-                                f)) {
+                                libraryFunctionsList.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-      llvm::errs() << "MemoryState: library function call to "
-                   << f->getName() << "()\n";
+      llvm::errs() << "MemoryState: library function call to " << f->getName()
+                   << "()\n";
     }
     enterLibraryFunction(f);
   } else if (std::binary_search(memoryFunctionsList.begin(),
-                                memoryFunctionsList.end(),
-                                f)) {
+                                memoryFunctionsList.end(), f)) {
     ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
     ConstantExpr *constSize = dyn_cast<ConstantExpr>(arguments[2]);
 
@@ -198,7 +190,6 @@ void MemoryState::registerFunctionRet(llvm::Function *f) {
   }
 }
 
-
 void MemoryState::clearEverything() {
   trace.clear();
   fingerprint.discardEverything();
@@ -231,21 +222,20 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
     ref<ConstantExpr> base = mo.getBaseExpr();
     llvm::errs() << "MemoryState: registering "
                  << (mo.isLocal ? "local " : "global ")
-                 << "ObjectState at base address "
-                 << ExprString(base) << "\n";
+                 << "ObjectState at base address " << ExprString(base) << "\n";
   }
 
   applyWriteFragment(address, mo, os, bytes);
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << " [fingerprint: "
-                 << fingerprint.getFingerprintAsString() << "]\n";
+    llvm::errs() << " [fingerprint: " << fingerprint.getFingerprintAsString()
+                 << "]\n";
   }
 }
 
 void MemoryState::unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                                   const ObjectState &os, std::size_t bytes) {
- if (disableMemoryState) {
+  if (disableMemoryState) {
     return;
   }
 
@@ -253,15 +243,14 @@ void MemoryState::unregisterWrite(ref<Expr> address, const MemoryObject &mo,
     ref<ConstantExpr> base = mo.getBaseExpr();
     llvm::errs() << "MemoryState: unregistering "
                  << (mo.isLocal ? "local " : "global ")
-                 << "ObjectState at base address "
-                 << ExprString(base) << "\n";
+                 << "ObjectState at base address " << ExprString(base) << "\n";
   }
 
   applyWriteFragment(address, mo, os, bytes);
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << " [fingerprint: "
-                 << fingerprint.getFingerprintAsString() << "]\n";
+    llvm::errs() << " [fingerprint: " << fingerprint.getFingerprintAsString()
+                 << "]\n";
   }
 }
 
@@ -388,8 +377,9 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock &bb) {
     copy.applyToFingerprintLocalDelta();
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-      llvm::errs() << "MemoryState: Add live argument " << index << " to function "
-                   << kf->function->getName() << " = " << ExprString(value)
+      llvm::errs() << "MemoryState: Add live argument " << index
+                   << " to function " << kf->function->getName() << " = "
+                   << ExprString(value)
                    << " [fingerprint: " << copy.getFingerprintAsString()
                    << "]\n";
     }
@@ -419,8 +409,7 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock &bb) {
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: Register BasicBlock " << bb.getName()
-                 << " [fingerprint: " << copy.getFingerprintAsString()
-                 << "]\n";
+                 << " [fingerprint: " << copy.getFingerprintAsString() << "]\n";
   }
 
   const KInstruction *inst = getKInstruction(&bb);
@@ -493,8 +482,8 @@ bool MemoryState::enterListedFunction(llvm::Function *f) {
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering listed function: "
-                 << f->getName() << "\n";
+    llvm::errs() << "MemoryState: entering listed function: " << f->getName()
+                 << "\n";
   }
 
   listedFunction.entered = true;
@@ -527,8 +516,8 @@ bool MemoryState::enterLibraryFunction(llvm::Function *f) {
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering library function: "
-                 << f->getName() << "\n";
+    llvm::errs() << "MemoryState: entering library function: " << f->getName()
+                 << "\n";
   }
 
   libraryFunction.entered = true;
@@ -556,8 +545,10 @@ bool MemoryState::isInLibraryFunction(llvm::Function *f) const {
 }
 
 bool MemoryState::enterMemoryFunction(llvm::Function *f,
-  ref<ConstantExpr> address, const MemoryObject *mo, const ObjectState *os,
-  std::size_t bytes) {
+                                      ref<ConstantExpr> address,
+                                      const MemoryObject *mo,
+                                      const ObjectState *os,
+                                      std::size_t bytes) {
   if (memoryFunction.entered) {
     // we can only enter one library function at a time
     klee_warning_once(f, "already entered a memory function");
@@ -565,8 +556,8 @@ bool MemoryState::enterMemoryFunction(llvm::Function *f,
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering memory function: "
-                 << f->getName() << "\n";
+    llvm::errs() << "MemoryState: entering memory function: " << f->getName()
+                 << "\n";
   }
 
   unregisterWrite(address, *mo, *os, bytes);
@@ -609,8 +600,7 @@ void MemoryState::registerPushFrame(const KFunction *kf) {
                  << ")\n";
   }
 
-  trace.registerEndOfStackFrame(kf,
-                                fingerprint.getLocalDelta(),
+  trace.registerEndOfStackFrame(kf, fingerprint.getLocalDelta(),
                                 fingerprint.getAllocaDelta());
 
   // make locals and arguments "invisible"
@@ -670,7 +660,6 @@ void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
   }
 }
 
-
 std::string MemoryState::ExprString(ref<Expr> expr) {
   std::string result;
   llvm::raw_string_ostream ostream(result);
@@ -679,4 +668,4 @@ std::string MemoryState::ExprString(ref<Expr> expr) {
   return result;
 }
 
-}
+} // namespace klee

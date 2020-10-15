@@ -14,7 +14,7 @@
 namespace llvm {
 class BasicBlock;
 class Function;
-}
+} // namespace llvm
 
 namespace klee {
 class ExecutionState;
@@ -63,7 +63,7 @@ private:
 
   template <std::size_t array_size>
   static void initializeFunctionList(KModule *kmodule,
-                                     const char* (& functions)[array_size],
+                                     const char *(&functions)[array_size],
                                      std::vector<llvm::Function *> &list);
 
   static std::string ExprString(ref<Expr> expr);
@@ -77,7 +77,8 @@ private:
   bool isInLibraryFunction(llvm::Function *f) const;
 
   bool enterMemoryFunction(llvm::Function *f, ref<ConstantExpr> address,
-    const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
+                           const MemoryObject *mo, const ObjectState *os,
+                           std::size_t bytes);
   void leaveMemoryFunction();
   bool isInMemoryFunction(llvm::Function *f) const;
 
@@ -90,7 +91,8 @@ private:
                           const ObjectState &os, std::size_t bytes);
 
   void updateDisableMemoryState() {
-    disableMemoryState = listedFunction.entered || libraryFunction.entered || memoryFunction.entered || globalDisableMemoryState;
+    disableMemoryState = listedFunction.entered || libraryFunction.entered ||
+                         memoryFunction.entered || globalDisableMemoryState;
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: updating disableMemoryState: "
@@ -104,13 +106,13 @@ private:
 
 public:
   MemoryState() = delete;
-  MemoryState& operator=(const MemoryState&) = delete;
+  MemoryState &operator=(const MemoryState &) = delete;
 
   MemoryState(const ExecutionState *state) : executionState(state) {}
   MemoryState(const MemoryState &from, const ExecutionState *state)
-    : MemoryState(from) {
+      : MemoryState(from) {
     executionState = state;
- }
+  }
 
   void disable() {
     globalDisableMemoryState = true;
@@ -139,17 +141,17 @@ public:
   }
 
   std::size_t getFunctionListsLength() const {
-    return MemoryState::outputFunctionsWhitelist.size()
-        + MemoryState::inputFunctionsBlacklist.size()
-        + MemoryState::libraryFunctionsList.size()
-        + MemoryState::memoryFunctionsList.size();
+    return MemoryState::outputFunctionsWhitelist.size() +
+           MemoryState::inputFunctionsBlacklist.size() +
+           MemoryState::libraryFunctionsList.size() +
+           MemoryState::memoryFunctionsList.size();
   }
 
   std::size_t getFunctionListsCapacity() const {
-    return MemoryState::outputFunctionsWhitelist.capacity()
-        + MemoryState::inputFunctionsBlacklist.capacity()
-        + MemoryState::libraryFunctionsList.capacity()
-        + MemoryState::memoryFunctionsList.capacity();
+    return MemoryState::outputFunctionsWhitelist.capacity() +
+           MemoryState::inputFunctionsBlacklist.capacity() +
+           MemoryState::libraryFunctionsList.capacity() +
+           MemoryState::memoryFunctionsList.capacity();
   }
 
   static void setKModule(KModule *kmodule);
@@ -169,7 +171,7 @@ public:
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                        const ObjectState &os, std::size_t bytes);
   void unregisterWrite(ref<Expr> address, const MemoryObject &mo,
-                                          const ObjectState &os) {
+                       const ObjectState &os) {
     unregisterWrite(address, mo, os, os.size);
   }
   void unregisterWrite(const MemoryObject &mo, const ObjectState &os) {
@@ -191,6 +193,6 @@ public:
     trace.dumpTrace(out);
   }
 };
-}
+} // namespace klee
 
 #endif

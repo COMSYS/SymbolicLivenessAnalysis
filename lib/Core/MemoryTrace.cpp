@@ -59,12 +59,11 @@ void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
   trace.emplace_back(instruction, fingerprint);
 }
 
-void MemoryTrace::registerEndOfStackFrame(const KFunction* kf,
-                                          fingerprint_t fingerprintLocalDelta,
-                                          fingerprint_t fingerprintAllocaDelta)
-{
-  stackFrames.emplace_back(trace.size(), kf,
-                           fingerprintLocalDelta, fingerprintAllocaDelta);
+void MemoryTrace::registerEndOfStackFrame(
+    const KFunction *kf, fingerprint_t fingerprintLocalDelta,
+    fingerprint_t fingerprintAllocaDelta) {
+  stackFrames.emplace_back(trace.size(), kf, fingerprintLocalDelta,
+                           fingerprintAllocaDelta);
 }
 
 void MemoryTrace::clear() {
@@ -115,7 +114,7 @@ bool MemoryTrace::findInfiniteLoopInFunction() const {
   if (stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
     assert(stackFrames.back().index < trace.size() &&
-      "current stack frame is empty");
+           "current stack frame is empty");
   }
 
   std::size_t topStackFrameEntries = getNumberOfEntriesInCurrentStackFrame();
@@ -139,7 +138,7 @@ bool MemoryTrace::findInfiniteRecursion() const {
   if (stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
     assert(stackFrames.back().index < trace.size() &&
-      "current stack frame is empty");
+           "current stack frame is empty");
   }
 
   auto stackFramesIt = stackFrames.rbegin();
@@ -175,8 +174,9 @@ bool MemoryTrace::isAllocaAllocationInCurrentStackFrame(
   return (state.stack.size() - 1 == mo.getStackframeIndex());
 }
 
-MemoryTrace::fingerprint_t *MemoryTrace::getPreviousAllocaDelta(
-  const ExecutionState &state, const MemoryObject &mo) {
+MemoryTrace::fingerprint_t *
+MemoryTrace::getPreviousAllocaDelta(const ExecutionState &state,
+                                    const MemoryObject &mo) {
   assert(!isAllocaAllocationInCurrentStackFrame(state, mo));
 
   std::size_t index = mo.getStackframeIndex();
@@ -209,16 +209,15 @@ void MemoryTrace::dumpTrace(llvm::raw_ostream &out) const {
         if (static_cast<std::size_t>(trace.rend() - it) ==
             tmpFrames.back().index) {
           out << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/"
-                       << stackFrames.size() << "\n";
+              << stackFrames.size() << "\n";
           tmpFrames.pop_back();
         }
       }
-      out << entry.inst << " (" << ii.file << ":" << ii.line << ":"
-                   << ii.id << "): "
-                   << MemoryFingerprint::toString(entry.fingerprint) << "\n";
+      out << entry.inst << " (" << ii.file << ":" << ii.line << ":" << ii.id
+          << "): " << MemoryFingerprint::toString(entry.fingerprint) << "\n";
     }
     out << "BOTTOM OF MemoryTrace STACK\n";
   }
 }
 
-}
+} // namespace klee

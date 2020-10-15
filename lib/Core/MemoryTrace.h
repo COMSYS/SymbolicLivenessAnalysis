@@ -15,15 +15,14 @@ struct StackFrame;
 
 class MemoryTrace {
 
-using fingerprint_t = MemoryFingerprint::fingerprint_t;
+  using fingerprint_t = MemoryFingerprint::fingerprint_t;
 
 private:
   struct MemoryTraceEntry {
     const KInstruction *inst;
     fingerprint_t fingerprint;
 
-    MemoryTraceEntry(const KInstruction *inst,
-                     fingerprint_t fingerprint)
+    MemoryTraceEntry(const KInstruction *inst, fingerprint_t fingerprint)
         : inst(inst), fingerprint(fingerprint) {}
 
     bool operator==(const MemoryTraceEntry &rhs) const {
@@ -47,13 +46,10 @@ public:
     // allocas allocated in this stack frame
     fingerprint_t fingerprintAllocaDelta;
 
-    StackFrameEntry(std::size_t index,
-                    const KFunction *kf,
+    StackFrameEntry(std::size_t index, const KFunction *kf,
                     fingerprint_t fingerprintLocalDelta,
                     fingerprint_t fingerprintAllocaDelta)
-        : index(index),
-          kf(kf),
-          fingerprintLocalDelta(fingerprintLocalDelta),
+        : index(index), kf(kf), fingerprintLocalDelta(fingerprintLocalDelta),
           fingerprintAllocaDelta(fingerprintAllocaDelta) {}
   };
 
@@ -107,6 +103,6 @@ public:
 
   void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const;
 };
-}
+} // namespace klee
 
 #endif
