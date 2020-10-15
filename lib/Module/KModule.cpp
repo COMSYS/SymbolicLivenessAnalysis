@@ -368,12 +368,12 @@ void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
     for (auto &kf : functions) {
       lrp.runOnFunction(*kf->function);
 
-      for (std::size_t i = 0; i < kf->numInstructions; ++i) {
-        // attach set of live KInstruction*s to each KInstruction
-        KInstruction *ki = kf->instructions[i];
-        const auto *set = lrp.getLiveSet(ki->inst);
-        if (set == nullptr)
-          continue;
+      for (auto &bb : *kf->function) {
+        const auto *set =
+            isa<PHINode>(bb.front())
+                ? lrp.getLiveSet(&*std::prev(bb.getFirstInsertionPt()))
+                : lrp.getBasicBlockLiveSet(&bb);
+        assert(set != nullptr);
 
         std::vector<const KInstruction *> liveKInstSet;
         for (const Value *liveValue : *set) {
@@ -385,8 +385,7 @@ void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
           liveKInstSet.push_back(liveKInst);
         }
 
-        InstructionInfo *ii = const_cast<InstructionInfo *>(ki->info);
-        ii->setLiveLocals(std::move(liveKInstSet));
+        kf->setLiveLocals(&bb, std::move(liveKInstSet));
       }
 
       auto bbInfo = lrp.getBasicBlockInfoMap();

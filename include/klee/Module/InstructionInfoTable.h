@@ -39,7 +39,6 @@ class KInstruction;
 
   private:
     KInstruction *ki = nullptr;
-    std::vector<const KInstruction *> liveLocals;
 
   public:
     InstructionInfo(unsigned id, const std::string &file, unsigned line,
@@ -57,14 +56,6 @@ class KInstruction;
 
     KInstruction *getKInstruction() const {
       return ki;
-    }
-
-    void setLiveLocals(std::vector<const KInstruction *> &&set) {
-      liveLocals = set;
-    }
-
-    const std::vector<const KInstruction *> &getLiveLocals() const {
-      return liveLocals;
     }
   };
 

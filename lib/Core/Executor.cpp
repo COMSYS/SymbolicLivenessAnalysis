@@ -1308,15 +1308,7 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
 
 void Executor::bindLocal(KInstruction *target, ExecutionState &state, 
                          ref<Expr> value) {
-  Cell &cell = getDestCell(state, target);
-  if (DetectInfiniteLoops) {
-    if (!cell.value.isNull()) {
-      // unregister previous value to avoid cancellation
-      state.memoryState.unregisterLocal(target, cell.value);
-    }
-    state.memoryState.registerLocal(target, value);
-  }
-  cell.value = value;
+  getDestCell(state, target).value = value;
 }
 
 void Executor::bindArgument(KFunction *kf, unsigned index, 
@@ -1795,7 +1787,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       bindArgument(kf, k, state, arguments[k]);
 
     if (DetectInfiniteLoops) {
-      state.memoryState.registerEntryBasicBlock(state.pc->inst->getParent());
+      state.memoryState.registerBasicBlock(*state.pc->inst->getParent());
       if (state.memoryState.findInfiniteRecursion()) {
         terminateStateOnError(state, "infinite loop", InfiniteLoop);
       }
@@ -1821,12 +1813,6 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
   KFunction *kf = state.stack.back().kf;
   unsigned entry = kf->basicBlockEntry[dst];
   state.pc = &kf->instructions[entry];
-  if (DetectInfiniteLoops) {
-    // enterBasicBlock updates live register information, thus we need to call
-    // it on every BasicBlock change, not only on ones to a BasicBlock with more
-    // than one predecessor
-    state.memoryState.enterBasicBlock(dst, src);
-  }
   if (state.pc->inst->getOpcode() == Instruction::PHI) {
     PHINode *first = static_cast<PHINode*>(state.pc->inst);
     state.incomingBBIndex = first->getBasicBlockIndex(src);
@@ -1838,15 +1824,10 @@ void Executor::transferToBasicBlock(BasicBlock *dst, BasicBlock *src,
 void Executor::phiNodeProcessingCompleted(BasicBlock *dst, BasicBlock *src,
                                           ExecutionState &state) {
   if (DetectInfiniteLoops) {
-    // phiNodeProcessingCompleted updates live register information, thus we
-    // need to call it on every BasicBlock change (even if it does not contain
-    // any PHI nodes), not only on ones to a BasicBlock with more than one
-    // predecessor
-    state.memoryState.phiNodeProcessingCompleted(dst, src);
     if ((dst->getSinglePredecessor() == nullptr) ||
         InfiniteLoopDetectionDisableTwoPredecessorOpt) {
       // more than one predecessor
-      state.memoryState.registerBasicBlock(dst);
+      state.memoryState.registerBasicBlock(*dst);
       if (state.memoryState.findInfiniteLoopInFunction()) {
         terminateStateOnError(state, "infinite loop", InfiniteLoop);
       }

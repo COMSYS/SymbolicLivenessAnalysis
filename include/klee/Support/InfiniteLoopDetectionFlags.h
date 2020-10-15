@@ -20,8 +20,6 @@ extern llvm::cl::opt<bool> InfiniteLoopDetectionTruncateOnFork;
 
 extern llvm::cl::opt<bool> InfiniteLoopDetectionDisableTwoPredecessorOpt;
 
-extern llvm::cl::opt<bool> InfiniteLoopDetectionDisableLiveVariableAnalysis;
-
 extern llvm::cl::opt<bool> InfiniteLoopLogStateJSON;
 
 #ifdef HAVE_ZLIB_H
