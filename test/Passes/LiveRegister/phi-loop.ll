@@ -2,7 +2,7 @@
 
 define void @test() {
 entry:
-; CHECK-LABEL: entry:
+; CHECK-LABEL: entry: ; live = {}
 ; CHECK-NEXT: %z = {{.*}} ; live = {%z}
 ; CHECK-NEXT: %cmp = {{.*}} ; live = {%cmp, %z}
 ; CHECK-NEXT: br {{.*}} ; live = {%z}

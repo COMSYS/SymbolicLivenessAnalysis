@@ -2,7 +2,7 @@
 
 define void @test() {
 entry:
-; CHECK-LABEL: entry:
+; CHECK-LABEL: entry: ; live = {}
 ; CHECK-NEXT: %ptr = {{.*}} ; live = {%ptr}
 ; CHECK-NEXT: store {{.*}} ; live = {%ptr}
 ; CHECK-NEXT: %p = {{.*}} ; live = {%p}
@@ -37,14 +37,14 @@ onephi:
   br i1 %cmp3, label %twophi, label %twoinst
 
 twoinst:
-; CHECK-LABEL: twoinst:
+; CHECK-LABEL: twoinst: ; live = {}
 ; CHECK-NEXT: %h = {{.*}} ; live = {}
 ; CHECK-NEXT: ret void ; live = {}
   %h = xor i64 0, 0
   ret void
 
 oneinst:
-; CHECK-LABEL: oneinst:
+; CHECK-LABEL: oneinst: ; live = {}
 ; CHECK-NEXT: ret void ; live = {}
   ret void
 }

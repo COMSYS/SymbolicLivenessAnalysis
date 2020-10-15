@@ -2,7 +2,7 @@
 
 define i32 @test(i32 %x, i32 %y) {
 entry:
-; CHECK-LABEL: entry:
+; CHECK-LABEL: entry: ; live = {%x, %y}
 ; CHECK-NEXT: %x.addr = {{.*}} ; live = {%x, %x.addr, %y}
 ; CHECK-NEXT: %y.addr = {{.*}} ; live = {%x, %x.addr, %y, %y.addr}
 ; CHECK-NEXT: %z = {{.*}} ; live = {%x, %x.addr, %y, %y.addr, %z}

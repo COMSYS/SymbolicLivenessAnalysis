@@ -2,7 +2,7 @@
 
 define void @test() {
 entry:
-; CHECK-LABEL: entry:
+; CHECK-LABEL: entry: ; live = {}
 ; CHECK-NEXT: br {{.*}} ; live = {}
   br label %neverlive
 
@@ -25,7 +25,7 @@ reallydead:
   br label %exit
 
 exit:
-; CHECK-LABEL: exit:
+; CHECK-LABEL: exit: ; live = {}
 ; CHECK-NEXT: ret void ; live = {}
   ret void
 }

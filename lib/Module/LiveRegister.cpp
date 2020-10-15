@@ -110,7 +110,14 @@ void LiveRegisterPass::print(raw_ostream &os, const Module *M) const {
     const valueset_t &termLive = *bbInfo.termLive;
     const valueset_t &consumed = bbInfo.consumed;
 
-    os << bb.getName() << ":\n";
+    os << bb.getName() << ":";
+    if (!isa<PHINode>(bb.front())) {
+      os << " ; live = ";
+      const valueset_t &bbLive = basicBlocks.at(&bb);
+      printValuesAsSet(os, bbLive);
+    } else {
+      os << "\n";
+    }
     for (auto it = bb.begin(), ie = bb.end(); it != ie; ++it) {
       const Instruction &inst = *it;
       os << inst;

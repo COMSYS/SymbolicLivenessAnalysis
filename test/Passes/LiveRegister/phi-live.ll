@@ -2,7 +2,7 @@
 
 define void @test() {
 entry:
-; CHECK-LABEL: entry:
+; CHECK-LABEL: entry: ; live = {}
 ; CHECK-NEXT: br {{.*}} ; live = {}
   br label %a
 
@@ -27,14 +27,14 @@ b:
   br i1 %cmp.b, label %exit, label %c
 
 c:
-; CHECK-LABEL: c:
+; CHECK-LABEL: c: ; live = {%z}
 ; CHECK-NEXT: %cmp {{.*}} ; live = {%z}
 ; CHECK-NEXT: br {{.*}} ; live = {%z}
   %cmp = icmp ult i64 %z, 3
   br label %b
 
 exit:
-; CHECK-LABEL: exit:
+; CHECK-LABEL: exit: ; live = {}
 ; CHECK-NEXT: ret void ; live = {}
   ret void
 }
