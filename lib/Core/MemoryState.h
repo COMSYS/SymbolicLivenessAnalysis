@@ -85,6 +85,7 @@ private:
 
   KInstruction *getKInstruction(const llvm::BasicBlock* bb);
   KFunction *getKFunction(const llvm::BasicBlock *bb);
+  ref<Expr> getArgumentValue(const KFunction *kf, unsigned index);
   ref<Expr> getLocalValue(const KInstruction *kinst);
 
   void applyWriteFragment(ref<Expr> address, const MemoryObject &mo,
@@ -176,8 +177,6 @@ public:
   void unregisterWrite(const MemoryObject &mo, const ObjectState &os) {
     unregisterWrite(mo.getBaseExpr(), mo, os, os.size);
   }
-
-  void registerArgument(const KFunction *kf, unsigned index, ref<Expr> value);
 
   void registerExternalFunctionCall();
 

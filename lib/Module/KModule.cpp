@@ -375,17 +375,18 @@ void KModule::manifest(InterpreterHandler *ih, bool forceSourceOutput) {
                 : lrp.getBasicBlockLiveSet(&bb);
         assert(set != nullptr);
 
-        std::vector<const KInstruction *> liveKInstSet;
-        for (const Value *liveValue : *set) {
-          // convert Value* to KInstruction*
-          const auto *liveInst = dyn_cast<llvm::Instruction>(liveValue);
-          if (!liveInst) continue;
-          const InstructionInfo &ii = infos->getInfo(*liveInst);
-          const KInstruction *liveKInst = ii.getKInstruction();
-          liveKInstSet.push_back(liveKInst);
+        std::vector<const KInstruction *> liveInstSet;
+        std::vector<unsigned> liveArgsSet;
+        for (const Value *v : *set) {
+          if (const auto *inst = dyn_cast<llvm::Instruction>(v)) {
+            const InstructionInfo &ii = infos->getInfo(*inst);
+            liveInstSet.push_back(ii.getKInstruction());
+          } else if (const auto *arg = dyn_cast<llvm::Argument>(v)) {
+            liveArgsSet.push_back(arg->getArgNo());
+          }
         }
 
-        kf->setLiveLocals(&bb, std::move(liveKInstSet));
+        kf->setLiveLocals(&bb, std::move(liveInstSet), std::move(liveArgsSet));
       }
     }
   }

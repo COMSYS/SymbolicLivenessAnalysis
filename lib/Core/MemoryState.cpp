@@ -364,37 +364,6 @@ void MemoryState::applyWriteFragment(ref<Expr> address, const MemoryObject &mo,
   }
 }
 
-void MemoryState::registerArgument(const KFunction *kf, unsigned index,
-                                   ref<Expr> value) {
-  if (disableMemoryState) {
-    return;
-  }
-
-  if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
-    // concrete value
-    fingerprint.updateUint8(5);
-    fingerprint.updateUint64(reinterpret_cast<std::uintptr_t>(kf));
-    fingerprint.updateUint64(index);
-    fingerprint.updateConstantExpr(*constant);
-  } else {
-    // symbolic value
-    fingerprint.updateUint8(6);
-    fingerprint.updateUint64(reinterpret_cast<std::uintptr_t>(kf));
-    fingerprint.updateUint64(index);
-    fingerprint.updateExpr(value);
-  }
-
-  fingerprint.applyToFingerprintLocalDelta();
-
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: adding argument " << index << " to function "
-                 << reinterpret_cast<std::uintptr_t>(kf) << ": "
-                 << ExprString(value) << "\n"
-                 << " [fingerprint: " << fingerprint.getFingerprintAsString()
-                 << "]\n";
-  }
-}
-
 void MemoryState::registerBasicBlock(const llvm::BasicBlock &bb) {
   if (disableMemoryState) {
     return;
@@ -403,7 +372,31 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock &bb) {
   // apply live locals to copy of fingerprint
   auto copy = fingerprint;
   KFunction *kf = getKFunction(&bb);
-  for (auto &ki : kf->getLiveLocals(bb)) {
+  for (auto &index : kf->getLiveLocals(bb).args) {
+    ref<Expr> value = getArgumentValue(kf, index);
+    if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
+      // concrete value
+      copy.updateUint8(5);
+      copy.updateUint64(reinterpret_cast<std::uintptr_t>(kf));
+      copy.updateUint64(index);
+      copy.updateConstantExpr(*constant);
+    } else {
+      // symbolic value
+      copy.updateUint8(6);
+      copy.updateUint64(reinterpret_cast<std::uintptr_t>(kf));
+      copy.updateUint64(index);
+      copy.updateExpr(value);
+    }
+    copy.applyToFingerprintLocalDelta();
+
+    if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+      llvm::errs() << "MemoryState: Add live argument " << index << " to function "
+                   << kf->function->getName() << " = " << ExprString(value)
+                   << " [fingerprint: " << copy.getFingerprintAsString()
+                   << "]\n";
+    }
+  }
+  for (auto &ki : kf->getLiveLocals(bb).inst) {
     ref<Expr> value = getLocalValue(ki);
     if (ConstantExpr *constant = dyn_cast<ConstantExpr>(value)) {
       // concrete value
@@ -448,6 +441,10 @@ KFunction *MemoryState::getKFunction(const llvm::BasicBlock *bb) {
   KFunction *kf = kmodule->functionMap[f];
   assert(kf != nullptr && "failed to retrieve KFunction");
   return kf;
+}
+
+ref<Expr> MemoryState::getArgumentValue(const KFunction *kf, unsigned index) {
+  return executionState->stack.back().locals[kf->getArgRegister(index)].value;
 }
 
 ref<Expr> MemoryState::getLocalValue(const KInstruction *kinst) {

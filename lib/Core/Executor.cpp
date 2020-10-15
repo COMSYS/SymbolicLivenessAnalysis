@@ -1315,10 +1315,6 @@ void Executor::bindArgument(KFunction *kf, unsigned index,
                             ExecutionState &state, ref<Expr> value) {
   assert(getArgumentCell(state, kf, index).value.isNull() &&
          "argument has previouly been set!");
-  if (DetectInfiniteLoops) {
-    // no need to unregister argument (can only be set once within the same stack frame)
-    state.memoryState.registerArgument(kf, index, value);
-  }
   getArgumentCell(state, kf, index).value = value;
 }
 
