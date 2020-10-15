@@ -80,7 +80,7 @@ void MemoryTrace::clear() {
   }
 }
 
-std::size_t MemoryTrace::getNumberOfStackFrames() {
+std::size_t MemoryTrace::getNumberOfStackFrames() const {
   return stackFrames.size();
 }
 
@@ -111,8 +111,7 @@ MemoryTrace::StackFrameEntry MemoryTrace::popFrame() {
   return sfe;
 }
 
-
-bool MemoryTrace::findInfiniteLoopInFunction() {
+bool MemoryTrace::findInfiniteLoopInFunction() const {
   if (stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
     assert(stackFrames.back().index < trace.size() &&
@@ -123,7 +122,7 @@ bool MemoryTrace::findInfiniteLoopInFunction() {
 
   // find matching entries within first stack frame
   if (topStackFrameEntries > 1) {
-    MemoryTraceEntry &topEntry = trace.back();
+    const MemoryTraceEntry &topEntry = trace.back();
     auto it = trace.rbegin() + 1; // skip first element
     for (; it != trace.rbegin() + topStackFrameEntries; ++it) {
       // iterate over all elements within the first stack frame (but the first)
@@ -136,7 +135,7 @@ bool MemoryTrace::findInfiniteLoopInFunction() {
   return false;
 }
 
-bool MemoryTrace::findInfiniteRecursion() {
+bool MemoryTrace::findInfiniteRecursion() const {
   if (stackFrames.size() > 0) {
     // current stack frame has always at least one basic block
     assert(stackFrames.back().index < trace.size() &&
@@ -156,12 +155,12 @@ bool MemoryTrace::findInfiniteRecursion() {
   // memory objects, alloca deltas of previous stack frames and the binding
   // of arguments supplied to a function.
   if (stackFrames.size() > 0) {
-    MemoryTraceEntry &topStackFrameBase = trace.at(topStackFrameBoundary);
+    const MemoryTraceEntry &topStackFrameBase = trace.at(topStackFrameBoundary);
 
     for (auto it = stackFrames.rbegin() + 1; it != stackFrames.rend(); ++it) {
       // iterate over all stack frames (but the first)
 
-      MemoryTraceEntry &stackFrame = trace.at(it->index);
+      const MemoryTraceEntry &stackFrame = trace.at(it->index);
       if (topStackFrameBase == stackFrame) {
         // PC and iterator are the same at stack frame base
         return true;
@@ -171,10 +170,8 @@ bool MemoryTrace::findInfiniteRecursion() {
   return false;
 }
 
-
 bool MemoryTrace::isAllocaAllocationInCurrentStackFrame(
-  const ExecutionState &state, const MemoryObject &mo)
-{
+    const ExecutionState &state, const MemoryObject &mo) {
   return (state.stack.size() - 1 == mo.getStackframeIndex());
 }
 
@@ -182,14 +179,14 @@ MemoryTrace::fingerprint_t *MemoryTrace::getPreviousAllocaDelta(
   const ExecutionState &state, const MemoryObject &mo) {
   assert(!isAllocaAllocationInCurrentStackFrame(state, mo));
 
-  size_t index = mo.getStackframeIndex();
+  std::size_t index = mo.getStackframeIndex();
 
   // Compared to stackFrames, state.stack contains at least one more stack
   // frame, i.e. the currently executed one (top most entry)
   assert(stackFrames.size() + 1 <= state.stack.size());
 
   // smallest index that is present in MemoryTrace
-  size_t smallestIndex = state.stack.size() - (stackFrames.size() + 1);
+  std::size_t smallestIndex = state.stack.size() - (stackFrames.size() + 1);
   if (index < smallestIndex) {
     // MemoryTrace has been cleared since the time of allocation
     return nullptr;
@@ -209,7 +206,8 @@ void MemoryTrace::dumpTrace(llvm::raw_ostream &out) const {
       const MemoryTraceEntry &entry = *it;
       const InstructionInfo &ii = *entry.inst->info;
       if (!tmpFrames.empty()) {
-        if ((std::size_t)(trace.rend() - it) == tmpFrames.back().index) {
+        if (static_cast<std::size_t>(trace.rend() - it) ==
+            tmpFrames.back().index) {
           out << "STACKFRAME BOUNDARY " << tmpFrames.size() << "/"
                        << stackFrames.size() << "\n";
           tmpFrames.pop_back();

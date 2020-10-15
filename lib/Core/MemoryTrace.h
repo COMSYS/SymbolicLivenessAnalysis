@@ -26,12 +26,14 @@ private:
                      fingerprint_t fingerprint)
         : inst(inst), fingerprint(fingerprint) {}
 
-    bool operator==(const MemoryTraceEntry &rhs) {
+    bool operator==(const MemoryTraceEntry &rhs) const {
       // check KInstruction first (short-circuit evaluation)
       return (inst == rhs.inst && fingerprint == rhs.fingerprint);
     }
 
-    bool operator!=(const MemoryTraceEntry &rhs) { return !(operator==(rhs)); }
+    bool operator!=(const MemoryTraceEntry &rhs) const {
+      return !(operator==(rhs));
+    }
   };
 
 public:
@@ -63,19 +65,19 @@ public:
   MemoryTrace() = default;
   MemoryTrace(const MemoryTrace &) = default;
 
-  std::pair<size_t, size_t> getTraceLength() const {
+  std::pair<std::size_t, std::size_t> getTraceLength() const {
     return std::make_pair(trace.size(), stackFrames.size());
   }
 
-  std::pair<size_t, size_t> getTraceCapacity() const {
+  std::pair<std::size_t, std::size_t> getTraceCapacity() const {
     return std::make_pair(trace.capacity(), stackFrames.capacity());
   }
 
-  static std::pair<size_t, size_t> getTraceStructSizes() {
+  static std::pair<std::size_t, std::size_t> getTraceStructSizes() {
     return std::make_pair(sizeof(MemoryTraceEntry), sizeof(StackFrameEntry));
   }
 
-  size_t getNumberOfEntriesInCurrentStackFrame() const {
+  std::size_t getNumberOfEntriesInCurrentStackFrame() const {
     auto stackFramesIt = stackFrames.rbegin();
     std::size_t topStackFrameBoundary = 0;
     if (stackFramesIt != stackFrames.rend()) {
@@ -93,10 +95,10 @@ public:
                                fingerprint_t fingerprintLocalDelta,
                                fingerprint_t fingerprintAllocaDelta);
   StackFrameEntry popFrame();
-  bool findInfiniteLoopInFunction();
-  bool findInfiniteRecursion();
+  bool findInfiniteLoopInFunction() const;
+  bool findInfiniteRecursion() const;
   void clear();
-  std::size_t getNumberOfStackFrames();
+  std::size_t getNumberOfStackFrames() const;
 
   static bool isAllocaAllocationInCurrentStackFrame(const ExecutionState &state,
                                                     const MemoryObject &mo);

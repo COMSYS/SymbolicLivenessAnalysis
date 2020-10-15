@@ -5,12 +5,7 @@
 #include "MemoryFingerprint.h"
 #include "MemoryTrace.h"
 
-#include "klee/Module/KInstruction.h"
-#include "klee/Module/KModule.h"
 #include "klee/Support/InfiniteLoopDetectionFlags.h"
-
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/Function.h"
 
 #include <cstdint>
 #include <unordered_set>
@@ -23,6 +18,9 @@ class Function;
 
 namespace klee {
 class ExecutionState;
+class KFunction;
+class KInstruction;
+class KModule;
 
 class MemoryState {
 
@@ -72,21 +70,21 @@ private:
 
   bool enterListedFunction(llvm::Function *f);
   void leaveListedFunction();
-  bool isInListedFunction(llvm::Function *f);
+  bool isInListedFunction(llvm::Function *f) const;
 
   bool enterLibraryFunction(llvm::Function *f);
   void leaveLibraryFunction();
-  bool isInLibraryFunction(llvm::Function *f);
+  bool isInLibraryFunction(llvm::Function *f) const;
 
   bool enterMemoryFunction(llvm::Function *f, ref<ConstantExpr> address,
     const MemoryObject *mo, const ObjectState *os, std::size_t bytes);
-  bool isInMemoryFunction(llvm::Function *f);
   void leaveMemoryFunction();
+  bool isInMemoryFunction(llvm::Function *f) const;
 
-  KInstruction *getKInstruction(const llvm::BasicBlock* bb);
-  KFunction *getKFunction(const llvm::BasicBlock *bb);
-  ref<Expr> getArgumentValue(const KFunction *kf, unsigned index);
-  ref<Expr> getLocalValue(const KInstruction *kinst);
+  KInstruction *getKInstruction(const llvm::BasicBlock *bb) const;
+  KFunction *getKFunction(const llvm::BasicBlock *bb) const;
+  ref<Expr> getArgumentValue(const KFunction *kf, unsigned index) const;
+  ref<Expr> getLocalValue(const KInstruction *kinst) const;
 
   void applyWriteFragment(ref<Expr> address, const MemoryObject &mo,
                           const ObjectState &os, std::size_t bytes);
@@ -124,19 +122,19 @@ public:
     updateDisableMemoryState();
   }
 
-  static std::pair<size_t, size_t> getTraceStructSizes() {
+  static std::pair<std::size_t, std::size_t> getTraceStructSizes() {
     return MemoryTrace::getTraceStructSizes();
   }
 
-  std::pair<size_t, size_t> getTraceLength() const {
+  std::pair<std::size_t, std::size_t> getTraceLength() const {
     return trace.getTraceLength();
   }
 
-  std::pair<size_t, size_t> getTraceCapacity() const {
+  std::pair<std::size_t, std::size_t> getTraceCapacity() const {
     return trace.getTraceCapacity();
   }
 
-  size_t getNumberOfEntriesInCurrentStackFrame() const {
+  std::size_t getNumberOfEntriesInCurrentStackFrame() const {
     return trace.getNumberOfEntriesInCurrentStackFrame();
   }
 
@@ -182,8 +180,8 @@ public:
 
   void registerBasicBlock(const llvm::BasicBlock &bb);
 
-  bool findInfiniteLoopInFunction();
-  bool findInfiniteRecursion();
+  bool findInfiniteLoopInFunction() const;
+  bool findInfiniteRecursion() const;
 
   void registerPushFrame(const KFunction *kf);
   void registerPopFrame(const llvm::BasicBlock *returningBB,

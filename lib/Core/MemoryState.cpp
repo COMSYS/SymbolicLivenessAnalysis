@@ -7,16 +7,15 @@
 #include "klee/Module/Cell.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KModule.h"
+#include "klee/Module/KInstruction.h"
 #include "klee/Support/ErrorHandling.h"
 #include "klee/Support/InfiniteLoopDetectionFlags.h"
 
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cmath>
 #include <iomanip>
@@ -127,7 +126,6 @@ void MemoryState::initializeFunctionList(KModule *_kmodule,
   std::sort(tmp.begin(), tmp.end());
   list = std::move(tmp);
 }
-
 
 
 void MemoryState::registerFunctionCall(llvm::Function *f,
@@ -429,13 +427,13 @@ void MemoryState::registerBasicBlock(const llvm::BasicBlock &bb) {
   trace.registerBasicBlock(inst, copy.getFingerprint());
 }
 
-KInstruction *MemoryState::getKInstruction(const llvm::BasicBlock* bb) {
+KInstruction *MemoryState::getKInstruction(const llvm::BasicBlock *bb) const {
   KFunction *kf = getKFunction(bb);
   unsigned entry = kf->basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)];
   return kf->instructions[entry];
 }
 
-KFunction *MemoryState::getKFunction(const llvm::BasicBlock *bb) {
+KFunction *MemoryState::getKFunction(const llvm::BasicBlock *bb) const {
   llvm::Function *f = const_cast<llvm::Function *>(bb->getParent());
   assert(f != nullptr && "failed to retrieve Function for BasicBlock");
   KFunction *kf = kmodule->functionMap[f];
@@ -443,15 +441,16 @@ KFunction *MemoryState::getKFunction(const llvm::BasicBlock *bb) {
   return kf;
 }
 
-ref<Expr> MemoryState::getArgumentValue(const KFunction *kf, unsigned index) {
+ref<Expr> MemoryState::getArgumentValue(const KFunction *kf,
+                                        unsigned index) const {
   return executionState->stack.back().locals[kf->getArgRegister(index)].value;
 }
 
-ref<Expr> MemoryState::getLocalValue(const KInstruction *kinst) {
+ref<Expr> MemoryState::getLocalValue(const KInstruction *kinst) const {
   return executionState->stack.back().locals[kinst->dest].value;
 }
 
-bool MemoryState::findInfiniteLoopInFunction() {
+bool MemoryState::findInfiniteLoopInFunction() const {
   if (disableMemoryState) {
     // we do not want to find infinite loops in library or output functions
     return false;
@@ -468,7 +467,7 @@ bool MemoryState::findInfiniteLoopInFunction() {
   return result;
 }
 
-bool MemoryState::findInfiniteRecursion() {
+bool MemoryState::findInfiniteRecursion() const {
   if (disableMemoryState) {
     // we do not want to find infinite loops in library or output functions
     return false;
@@ -518,7 +517,7 @@ void MemoryState::leaveListedFunction() {
   updateDisableMemoryState();
 }
 
-bool MemoryState::isInListedFunction(llvm::Function *f) {
+bool MemoryState::isInListedFunction(llvm::Function *f) const {
   return (listedFunction.entered && f == listedFunction.function);
 }
 
@@ -552,7 +551,7 @@ void MemoryState::leaveLibraryFunction() {
   updateDisableMemoryState();
 }
 
-bool MemoryState::isInLibraryFunction(llvm::Function *f) {
+bool MemoryState::isInLibraryFunction(llvm::Function *f) const {
   return (libraryFunction.entered && f == libraryFunction.function);
 }
 
@@ -583,7 +582,7 @@ bool MemoryState::enterMemoryFunction(llvm::Function *f,
   return true;
 }
 
-bool MemoryState::isInMemoryFunction(llvm::Function *f) {
+bool MemoryState::isInMemoryFunction(llvm::Function *f) const {
   return (memoryFunction.entered && f == memoryFunction.function);
 }
 
