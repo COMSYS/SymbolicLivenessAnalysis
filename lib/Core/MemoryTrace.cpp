@@ -17,7 +17,7 @@
 
 /*
 
-   Example: Internal Data Structures of MemoryTrace (KFunction* omitted)
+   Example: Internal Data Structures of MemoryTrace (llvm::Function* omitted)
 
    1. registerBasicBlock(inst 1, fingerprint 1);
    2. registerBasicBlock(inst 2, fingerprint 2);
@@ -60,9 +60,9 @@ void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
 }
 
 void MemoryTrace::registerEndOfStackFrame(
-    const KFunction *kf, fingerprint_t fingerprintLocalDelta,
+    const llvm::Function *function, fingerprint_t fingerprintLocalDelta,
     fingerprint_t fingerprintAllocaDelta) {
-  stackFrames.emplace_back(trace.size(), kf, fingerprintLocalDelta,
+  stackFrames.emplace_back(trace.size(), function, fingerprintLocalDelta,
                            fingerprintAllocaDelta);
 }
 

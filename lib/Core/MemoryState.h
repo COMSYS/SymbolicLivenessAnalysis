@@ -185,7 +185,7 @@ public:
   bool findInfiniteLoopInFunction() const;
   bool findInfiniteRecursion() const;
 
-  void registerPushFrame(const KFunction *kf);
+  void registerPushFrame(const llvm::Function *function);
   void registerPopFrame(const llvm::BasicBlock *returningBB,
                         const llvm::BasicBlock *callerBB);
 

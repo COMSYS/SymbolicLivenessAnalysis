@@ -594,13 +594,13 @@ void MemoryState::leaveMemoryFunction() {
   registerWrite(memoryFunction.address, *mo, *os, memoryFunction.bytes);
 }
 
-void MemoryState::registerPushFrame(const KFunction *kf) {
+void MemoryState::registerPushFrame(const llvm::Function *function) {
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: PUSHFRAME (" << kf->function->getName()
+    llvm::errs() << "MemoryState: PUSHFRAME (" << function->getName()
                  << ")\n";
   }
 
-  trace.registerEndOfStackFrame(kf, fingerprint.getLocalDelta(),
+  trace.registerEndOfStackFrame(function, fingerprint.getLocalDelta(),
                                 fingerprint.getAllocaDelta());
 
   // make locals and arguments "invisible"

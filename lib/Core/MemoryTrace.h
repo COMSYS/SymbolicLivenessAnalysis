@@ -7,9 +7,12 @@
 
 #include <vector>
 
+namespace llvm {
+class Function;
+}
+
 namespace klee {
 class ExecutionState;
-struct KFunction;
 class MemoryObject;
 struct StackFrame;
 
@@ -40,16 +43,17 @@ public:
     // first index in stack that belongs to next stack frame
     std::size_t index;
     // function that is executed in this stack frame
-    const KFunction *kf;
+    const llvm::Function *function;
     // locals and arguments only visible within this stack frame
     fingerprint_t fingerprintLocalDelta;
     // allocas allocated in this stack frame
     fingerprint_t fingerprintAllocaDelta;
 
-    StackFrameEntry(std::size_t index, const KFunction *kf,
+    StackFrameEntry(std::size_t index, const llvm::Function *function,
                     fingerprint_t fingerprintLocalDelta,
                     fingerprint_t fingerprintAllocaDelta)
-        : index(index), kf(kf), fingerprintLocalDelta(fingerprintLocalDelta),
+        : index(index), function(function),
+          fingerprintLocalDelta(fingerprintLocalDelta),
           fingerprintAllocaDelta(fingerprintAllocaDelta) {}
   };
 
@@ -87,7 +91,7 @@ public:
 
   void registerBasicBlock(const KInstruction *instruction,
                           const fingerprint_t &fingerprint);
-  void registerEndOfStackFrame(const KFunction *kf,
+  void registerEndOfStackFrame(const llvm::Function *function,
                                fingerprint_t fingerprintLocalDelta,
                                fingerprint_t fingerprintAllocaDelta);
   StackFrameEntry popFrame();

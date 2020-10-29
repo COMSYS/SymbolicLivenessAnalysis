@@ -1635,7 +1635,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
     if (DetectInfiniteLoops) {
-      state.memoryState.registerPushFrame(leavingFunction);
+      state.memoryState.registerPushFrame(leavingFunction->function);
     }
 
     if (statsTracker)
