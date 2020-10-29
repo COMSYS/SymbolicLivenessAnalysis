@@ -22,26 +22,26 @@
    1. registerBasicBlock(inst 1, fingerprint 1);
    2. registerBasicBlock(inst 2, fingerprint 2);
    3. registerBasicBlock(inst 3, fingerprint 3);
-   4. registerEndOfStackFrame(d1, d2, true);
+   4. registerEndOfStackFrame(d1, d2);
    5. registerBasicBlock(inst 4, fingerprint 4);
    6. registerBasicBlock(inst 5, fingerprint 5);
    7. registerBasicBlock(inst 6, fingerprint 6);
-   8. registerEndOfStackFrame(d3, d4, false);
+   8. registerEndOfStackFrame(d3, d4);
    9. registerBasicBlock(inst 7, fingerprint 7);
 
 
    std::vector<MemoryTraceEntry>
               trace
 
-       inst      fingerprint                      std::vector<StackFrameEntry>
+ #     inst      fingerprint                      std::vector<StackFrameEntry>
    +---------+----------------+                            stackFrames
  6 | inst 7  | fingerprint 7  |
- \==<==============<===================<======+     index   deltas..  glAlloc
- 5 | inst 6  | fingerprint 6  |   \            \  +-------+----------+-------+
-   +---------+----------------+    \            +-|---{ 6 | d3, d4   | false | 1
- 4 | inst 5  | fingerprint 5  |     +- Stack-     +-------+----------+-------+
-   +---------+----------------+    /   frame 1  +-|---{ 3 | d1, d2   | true  | 0
- 3 | inst 4  | fingerprint 4  |   /            /  +-------+----------+-------+
+ \==<==============<===================<======+     index   deltas..   #
+ 5 | inst 6  | fingerprint 6  |   \            \  +-------+----------+
+   +---------+----------------+    \            +-|---{ 6 | d3, d4   | 1
+ 4 | inst 5  | fingerprint 5  |     +- Stack-     +-------+----------+
+   +---------+----------------+    /   frame 1  +-|---{ 3 | d1, d2   | 0
+ 3 | inst 4  | fingerprint 4  |   /            /  +-------+----------+
  \==<==============<===================<======+         |
  2 | inst 3  | fingerprint 3  |   \                     +- index marks the first
    +---------+----------------+    \                       entry that belongs

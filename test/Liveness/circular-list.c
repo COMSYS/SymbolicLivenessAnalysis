@@ -3,7 +3,7 @@
 // RUN: %clang %s -emit-llvm -O2 -g -c -o %t-O2.bc
 // RUN: %clang %s -emit-llvm -O3 -g -c -o %t-O3.bc
 
-// TODO: check if difference between line 65 and 68 is significat or due to debug info
+// TODO: check if difference between line 65 and 68 is significant or due to debug info
 
 // RUN: rm -rf %t-O0.klee-out
 // RUN: %klee -libc=uclibc -posix-runtime -output-dir=%t-O0.klee-out -detect-infinite-loops -allocate-determ %t-O0.bc > %t-O0.log 2>&1
