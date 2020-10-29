@@ -702,24 +702,24 @@ static void parseArguments(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv, " klee\n");
 }
 
-static int enableInfiniteLoopDetection(Module *mainModule) {
-  Function *mainFn = mainModule->getFunction(EntryPoint);
-  if (!mainFn) {
-    klee_error("'%s' function not found in module.", EntryPoint.c_str());
+static void enableInfiniteLoopDetection(
+    std::vector<std::unique_ptr<llvm::Module>> &loadedModules) {
+  Function *mainFn = nullptr;
+  for (auto &module : loadedModules) {
+    mainFn = module->getFunction(EntryPoint);
+    if (mainFn)
+      break;
   }
 
-  Instruction *firstInst = &*(mainFn->begin()->begin());
-  LLVMContext &ctx = mainModule->getContext();
+  if (!mainFn)
+    klee_error("Entry function '%s' not found in module.", EntryPoint.c_str());
 
   Function *enableMemoryStateFn = Function::Create(
-    FunctionType::get(Type::getVoidTy(ctx), false),
-    GlobalValue::ExternalLinkage,
-    "klee_enable_memory_state",
-    mainModule);
-
-  CallInst::Create(enableMemoryStateFn, "", firstInst);
-
-  return 0;
+      FunctionType::get(Type::getVoidTy(mainFn->getContext()), false),
+      GlobalValue::ExternalLinkage, "klee_enable_memory_state",
+      mainFn->getParent());
+  IRBuilder<> Builder(&mainFn->front(), mainFn->front().getFirstInsertionPt());
+  Builder.CreateCall(enableMemoryStateFn);
 }
 
 static void
@@ -1280,9 +1280,7 @@ int main(int argc, char **argv, char **envp) {
   if (DetectInfiniteLoops) {
     // inject before everything else, so that functions (such as runtime or libc
     // initialization) inserted before the EntryPoint are not checked
-    int r = enableInfiniteLoopDetection(mainModule);
-    if (r != 0)
-      return r;
+    enableInfiniteLoopDetection(loadedModules);
   }
 
   if (WithPOSIXRuntime) {
