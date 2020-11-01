@@ -241,7 +241,7 @@ void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
 
 void MemoryState::unregisterWrite(ref<Expr> address, const MemoryObject &mo,
                                   const ObjectState &os, std::size_t bytes) {
-  if (disableMemoryState) {
+  if (disableMemoryState && !registerGlobalsInShadow) {
     return;
   }
 
