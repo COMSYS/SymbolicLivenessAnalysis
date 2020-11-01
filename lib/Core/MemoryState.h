@@ -8,6 +8,7 @@
 #include "klee/Support/InfiniteLoopDetectionFlags.h"
 
 #include <cstdint>
+#include <functional>
 #include <unordered_set>
 #include <vector>
 
@@ -37,23 +38,9 @@ private:
   bool disableMemoryState = true;
   bool globalDisableMemoryState = true;
 
-  struct listedFunction {
-    bool entered = false;
-    llvm::Function *function = nullptr;
-  } listedFunction;
-
-  struct libraryFunction {
-    bool entered = false;
-    llvm::Function *function = nullptr;
-  } libraryFunction;
-
-  struct memoryFunction {
-    bool entered = false;
-    llvm::Function *function = nullptr;
-    ref<ConstantExpr> address;
-    const MemoryObject *mo = nullptr;
-    std::size_t bytes = 0;
-  } memoryFunction;
+  const llvm::Function *shadowedFunction = nullptr;
+  std::function<void(MemoryState &)> shadowCallback;
+  bool registerGlobalsInShadow = false;
 
   static KModule *kmodule;
   static std::vector<llvm::Function *> outputFunctionsWhitelist;
@@ -68,19 +55,10 @@ private:
 
   static std::string ExprString(ref<Expr> expr);
 
-  bool enterListedFunction(llvm::Function *f);
-  void leaveListedFunction();
-  bool isInListedFunction(llvm::Function *f) const;
-
-  bool enterLibraryFunction(llvm::Function *f);
-  void leaveLibraryFunction();
-  bool isInLibraryFunction(llvm::Function *f) const;
-
-  bool enterMemoryFunction(llvm::Function *f, ref<ConstantExpr> address,
-                           const MemoryObject *mo, const ObjectState *os,
-                           std::size_t bytes);
-  void leaveMemoryFunction();
-  bool isInMemoryFunction(llvm::Function *f) const;
+  void enterShadowFunction(const llvm::Function *f,
+                           std::function<void(MemoryState &)> &&callback = {},
+                           bool registerGlobals = false);
+  void leaveShadowFunction(const llvm::Function *f);
 
   KInstruction *getKInstruction(const llvm::BasicBlock *bb) const;
   KFunction *getKFunction(const llvm::BasicBlock *bb) const;
@@ -91,14 +69,11 @@ private:
                           const ObjectState &os, std::size_t bytes);
 
   void updateDisableMemoryState() {
-    disableMemoryState = listedFunction.entered || libraryFunction.entered ||
-                         memoryFunction.entered || globalDisableMemoryState;
+    disableMemoryState = shadowedFunction || globalDisableMemoryState;
 
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: updating disableMemoryState: "
-                   << "(listedFunction: " << listedFunction.entered << " || "
-                   << "libraryFunction: " << libraryFunction.entered << " || "
-                   << "memoryFunction: " << memoryFunction.entered << " || "
+                   << "(shadowedFunction: " << !!shadowedFunction << " || "
                    << "globalDisable: " << globalDisableMemoryState << ") "
                    << "= " << disableMemoryState << "\n";
     }

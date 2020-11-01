@@ -127,8 +127,8 @@ void MemoryState::initializeFunctionList(KModule *_kmodule,
 void MemoryState::registerFunctionCall(llvm::Function *f,
                                        std::vector<ref<Expr>> &arguments) {
   if (globalDisableMemoryState) {
-    // we only check for global disable and not for library or listed functions
-    // as we assume that those will not call any input or output functions
+    // we only check for global disable and not for shadowed functions
+    // as we assume that those will not call any input functions
     return;
   }
 
@@ -139,21 +139,22 @@ void MemoryState::registerFunctionCall(llvm::Function *f,
                    << f->getName() << "()\n";
     }
     clearEverything();
-    enterListedFunction(f);
+    enterShadowFunction(f);
   } else if (std::binary_search(outputFunctionsWhitelist.begin(),
                                 outputFunctionsWhitelist.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: whitelisted output function call to "
                    << f->getName() << "()\n";
     }
-    enterListedFunction(f);
+    enterShadowFunction(f);
   } else if (std::binary_search(libraryFunctionsList.begin(),
                                 libraryFunctionsList.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: library function call to " << f->getName()
                    << "()\n";
     }
-    enterLibraryFunction(f);
+    // we need to register changes to global memory
+    enterShadowFunction(f, {}, true);
   } else if (std::binary_search(memoryFunctionsList.begin(),
                                 memoryFunctionsList.end(), f)) {
     ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
@@ -173,7 +174,18 @@ void MemoryState::registerFunctionCall(llvm::Function *f,
         std::uint64_t offset = addr - mo->address;
 
         if (mo->size >= offset + count) {
-          enterMemoryFunction(f, constAddr, mo, os, count);
+          if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
+            llvm::errs() << "MemoryState: memory function call to "
+                         << f->getName() << "()\n";
+          }
+          unregisterWrite(constAddr, *mo, *os, count);
+          enterShadowFunction(
+              f,
+              [constAddr, mo, count](MemoryState &ms) {
+                const auto *os = ms.executionState->addressSpace.findObject(mo);
+                ms.registerWrite(constAddr, *mo, *os, count);
+              },
+              false);
         }
       }
     }
@@ -181,12 +193,8 @@ void MemoryState::registerFunctionCall(llvm::Function *f,
 }
 
 void MemoryState::registerFunctionRet(llvm::Function *f) {
-  if (isInListedFunction(f)) {
-    leaveListedFunction();
-  } else if (isInLibraryFunction(f)) {
-    leaveLibraryFunction();
-  } else if (isInMemoryFunction(f)) {
-    leaveMemoryFunction();
+  if (f == shadowedFunction) {
+    leaveShadowFunction(f);
   }
 }
 
@@ -196,7 +204,7 @@ void MemoryState::clearEverything() {
 }
 
 void MemoryState::registerExternalFunctionCall() {
-  if (listedFunction.entered) {
+  if (shadowedFunction) {
     return;
   }
 
@@ -212,9 +220,7 @@ void MemoryState::registerExternalFunctionCall() {
 
 void MemoryState::registerWrite(ref<Expr> address, const MemoryObject &mo,
                                 const ObjectState &os, std::size_t bytes) {
-  if (disableMemoryState && !libraryFunction.entered) {
-    // in case of library functions, we need to record changes to global memory
-    // and previous allocas
+  if (disableMemoryState && !registerGlobalsInShadow) {
     return;
   }
 
@@ -277,11 +283,9 @@ void MemoryState::applyWriteFragment(ref<Expr> address, const MemoryObject &mo,
     }
   }
 
-  if (libraryFunction.entered) {
-    if (isLocal && externalDelta == nullptr) {
-      // change is only to be made to allocaDelta of current stack frame
-      return;
-    }
+  if (shadowedFunction && isLocal && externalDelta == nullptr) {
+    // change is only to be made to allocaDelta of current stack frame
+    return;
   }
 
   // optimization for concrete offsets: only hash changed indices
@@ -473,125 +477,39 @@ bool MemoryState::findInfiniteRecursion() const {
   return result;
 }
 
-bool MemoryState::enterListedFunction(llvm::Function *f) {
-  if (listedFunction.entered) {
-    // we can only enter one listed function at a time
-    // (we do not need to register additional functions calls by the entered
-    // function such as printf)
-    return false;
+void MemoryState::enterShadowFunction(
+    const llvm::Function *f, std::function<void(MemoryState &)> &&callback,
+    bool registerGlobals) {
+  if (shadowedFunction) {
+    return; // only one function can be entered at a time
   }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering listed function: " << f->getName()
+    llvm::errs() << "MemoryState: entering shadowed function: " << f->getName()
                  << "\n";
   }
 
-  listedFunction.entered = true;
-  listedFunction.function = f;
-
-  updateDisableMemoryState();
-
-  return true;
-}
-
-void MemoryState::leaveListedFunction() {
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: leaving listed function: "
-                 << listedFunction.function->getName() << "\n";
-  }
-
-  listedFunction.entered = false;
-  listedFunction.function = nullptr;
-
+  shadowedFunction = f;
+  shadowCallback = std::move(callback);
+  registerGlobalsInShadow = registerGlobals;
   updateDisableMemoryState();
 }
 
-bool MemoryState::isInListedFunction(llvm::Function *f) const {
-  return (listedFunction.entered && f == listedFunction.function);
-}
-
-bool MemoryState::enterLibraryFunction(llvm::Function *f) {
-  if (libraryFunction.entered) {
-    return false;
-  }
+void MemoryState::leaveShadowFunction(const llvm::Function *f) {
+  assert(f == shadowedFunction);
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering library function: " << f->getName()
-                 << "\n";
+    llvm::errs() << "MemoryState: leaving shadowed function: "
+                 << shadowedFunction->getName() << "\n";
   }
 
-  libraryFunction.entered = true;
-  libraryFunction.function = f;
-
+  if (shadowCallback) {
+    shadowCallback(*this);
+    shadowCallback = {};
+  }
+  shadowedFunction = nullptr;
+  registerGlobalsInShadow = false;
   updateDisableMemoryState();
-
-  return true;
-}
-
-void MemoryState::leaveLibraryFunction() {
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: leaving library function: "
-                 << libraryFunction.function->getName() << "\n";
-  }
-
-  libraryFunction.entered = false;
-  libraryFunction.function = nullptr;
-
-  updateDisableMemoryState();
-}
-
-bool MemoryState::isInLibraryFunction(llvm::Function *f) const {
-  return (libraryFunction.entered && f == libraryFunction.function);
-}
-
-bool MemoryState::enterMemoryFunction(llvm::Function *f,
-                                      ref<ConstantExpr> address,
-                                      const MemoryObject *mo,
-                                      const ObjectState *os,
-                                      std::size_t bytes) {
-  if (memoryFunction.entered) {
-    // we can only enter one library function at a time
-    klee_warning_once(f, "already entered a memory function");
-    return false;
-  }
-
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: entering memory function: " << f->getName()
-                 << "\n";
-  }
-
-  unregisterWrite(address, *mo, *os, bytes);
-
-  memoryFunction.entered = true;
-  memoryFunction.function = f;
-  memoryFunction.address = address;
-  memoryFunction.mo = mo;
-  memoryFunction.bytes = bytes;
-
-  updateDisableMemoryState();
-
-  return true;
-}
-
-bool MemoryState::isInMemoryFunction(llvm::Function *f) const {
-  return (memoryFunction.entered && f == memoryFunction.function);
-}
-
-void MemoryState::leaveMemoryFunction() {
-  if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
-    llvm::errs() << "MemoryState: leaving memory function: "
-                 << memoryFunction.function->getName() << "\n";
-  }
-
-  const MemoryObject *mo = memoryFunction.mo;
-  const ObjectState *os = executionState->addressSpace.findObject(mo);
-
-  memoryFunction.entered = false;
-  memoryFunction.function = nullptr;
-
-  updateDisableMemoryState();
-
-  registerWrite(memoryFunction.address, *mo, *os, memoryFunction.bytes);
 }
 
 void MemoryState::registerPushFrame(const llvm::Function *function) {
