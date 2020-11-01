@@ -124,7 +124,7 @@ void MemoryState::initializeFunctionList(KModule *_kmodule,
   list = std::move(tmp);
 }
 
-void MemoryState::registerFunctionCall(llvm::Function *f,
+void MemoryState::registerFunctionCall(const llvm::Function *f,
                                        std::vector<ref<Expr>> &arguments) {
   if (globalDisableMemoryState) {
     // we only check for global disable and not for shadowed functions
@@ -192,7 +192,7 @@ void MemoryState::registerFunctionCall(llvm::Function *f,
   }
 }
 
-void MemoryState::registerFunctionRet(llvm::Function *f) {
+void MemoryState::registerFunctionRet(const llvm::Function *f) {
   if (f == shadowedFunction) {
     leaveShadowFunction(f);
   }

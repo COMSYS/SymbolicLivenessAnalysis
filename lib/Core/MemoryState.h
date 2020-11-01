@@ -20,7 +20,7 @@ class Function;
 namespace klee {
 class ExecutionState;
 class KFunction;
-class KInstruction;
+struct KInstruction;
 class KModule;
 
 class MemoryState {
@@ -131,9 +131,9 @@ public:
 
   static void setKModule(KModule *kmodule);
 
-  void registerFunctionCall(llvm::Function *f,
+  void registerFunctionCall(const llvm::Function *f,
                             std::vector<ref<Expr>> &arguments);
-  void registerFunctionRet(llvm::Function *f);
+  void registerFunctionRet(const llvm::Function *f);
 
   void clearEverything();
 
