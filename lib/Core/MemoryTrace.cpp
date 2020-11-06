@@ -135,38 +135,26 @@ bool MemoryTrace::findInfiniteLoopInFunction() const {
 }
 
 bool MemoryTrace::findInfiniteRecursion() const {
-  if (stackFrames.size() > 0) {
-    // current stack frame has always at least one basic block
-    assert(stackFrames.back().index < trace.size() &&
-           "current stack frame is empty");
-  }
+  if (stackFrames.empty())
+    return false;
 
-  auto stackFramesIt = stackFrames.rbegin();
-  std::size_t topStackFrameBoundary = 0;
-  if (stackFramesIt != stackFrames.rend()) {
-    // first index that belongs to current stack frame
-    topStackFrameBoundary = stackFramesIt->index;
-  }
+  assert(stackFrames.back().index < trace.size() &&
+         "a stack frame should always have at least one basic block entry");
 
   // To find infinite recursion, it suffices to find a match of the first
   // entry within a stack frame.
   // This entry is called stack frame base and only contains changes to global
   // memory objects, alloca deltas of previous stack frames and the binding
   // of arguments supplied to a function.
-  if (stackFrames.size() > 0) {
-    const MemoryTraceEntry &topStackFrameBase = trace.at(topStackFrameBoundary);
+  const MemoryTraceEntry &currentStackFrameBase =
+      trace.at(stackFrames.back().index);
 
-    for (auto it = stackFrames.rbegin() + 1; it != stackFrames.rend(); ++it) {
-      // iterate over all stack frames (but the first)
-
-      const MemoryTraceEntry &stackFrame = trace.at(it->index);
-      if (topStackFrameBase == stackFrame) {
-        // PC and iterator are the same at stack frame base
-        return true;
-      }
-    }
-  }
-  return false;
+  return std::find_if(std::next(stackFrames.rbegin()), stackFrames.rend(),
+                      [&](const StackFrameEntry &sfe) {
+                        const MemoryTraceEntry &stackFrameBase =
+                            trace.at(sfe.index);
+                        return currentStackFrameBase == stackFrameBase;
+                      }) != stackFrames.rend();
 }
 
 bool MemoryTrace::isAllocaAllocationInCurrentStackFrame(
