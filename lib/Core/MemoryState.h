@@ -39,6 +39,7 @@ private:
   bool globalDisableMemoryState = true;
 
   const llvm::Function *shadowedFunction = nullptr;
+  std::size_t shadowedStackFrame = 0;
   std::function<void(MemoryState &)> shadowCallback;
   bool registerGlobalsInShadow = false;
 
@@ -55,10 +56,10 @@ private:
 
   static std::string ExprString(ref<Expr> expr);
 
-  void enterShadowFunction(const llvm::Function *f,
+  void enterShadowFunction(const llvm::Function *f, std::size_t stackFrame,
                            std::function<void(MemoryState &)> &&callback = {},
                            bool registerGlobals = false);
-  void leaveShadowFunction(const llvm::Function *f);
+  void leaveShadowFunction(const llvm::Function *f, std::size_t stackFrame);
 
   KInstruction *getKInstruction(const llvm::BasicBlock *bb) const;
   KFunction *getKFunction(const llvm::BasicBlock *bb) const;
@@ -131,9 +132,9 @@ public:
 
   static void setKModule(KModule *kmodule);
 
-  void registerFunctionCall(const llvm::Function *f,
+  void registerFunctionCall(const llvm::Function *f, std::size_t stackFrame,
                             std::vector<ref<Expr>> &arguments);
-  void registerFunctionRet(const llvm::Function *f);
+  void registerFunctionRet(const llvm::Function *f, std::size_t stackFrame);
 
   void clearEverything();
 
@@ -160,8 +161,10 @@ public:
   bool findInfiniteLoopInFunction() const;
   bool findInfiniteRecursion() const;
 
-  void registerPushFrame(const llvm::Function *function);
-  void registerPopFrame(const llvm::BasicBlock *returningBB,
+  void registerPushFrame(const llvm::Function *function,
+                         std::size_t stackFrame);
+  void registerPopFrame(std::size_t stackFrame,
+                        const llvm::BasicBlock *returningBB,
                         const llvm::BasicBlock *callerBB);
 
   void dumpTrace(llvm::raw_ostream &out = llvm::errs()) const {

@@ -62,6 +62,10 @@ void MemoryTrace::registerBasicBlock(const KInstruction *instruction,
 void MemoryTrace::registerEndOfStackFrame(
     const llvm::Function *function, fingerprint_t fingerprintLocalDelta,
     fingerprint_t fingerprintAllocaDelta) {
+
+  assert((stackFrames.empty() || trace.size() != stackFrames.back().index) &&
+         "cannot have two entries with same index");
+
   stackFrames.emplace_back(trace.size(), function, fingerprintLocalDelta,
                            fingerprintAllocaDelta);
 }

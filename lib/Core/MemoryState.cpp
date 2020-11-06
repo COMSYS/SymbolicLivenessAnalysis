@@ -125,6 +125,7 @@ void MemoryState::initializeFunctionList(KModule *_kmodule,
 }
 
 void MemoryState::registerFunctionCall(const llvm::Function *f,
+                                       std::size_t stackFrame,
                                        std::vector<ref<Expr>> &arguments) {
   if (globalDisableMemoryState) {
     // we only check for global disable and not for shadowed functions
@@ -139,14 +140,14 @@ void MemoryState::registerFunctionCall(const llvm::Function *f,
                    << f->getName() << "()\n";
     }
     clearEverything();
-    enterShadowFunction(f);
+    enterShadowFunction(f, stackFrame);
   } else if (std::binary_search(outputFunctionsWhitelist.begin(),
                                 outputFunctionsWhitelist.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "MemoryState: whitelisted output function call to "
                    << f->getName() << "()\n";
     }
-    enterShadowFunction(f);
+    enterShadowFunction(f, stackFrame);
   } else if (std::binary_search(libraryFunctionsList.begin(),
                                 libraryFunctionsList.end(), f)) {
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
@@ -154,7 +155,7 @@ void MemoryState::registerFunctionCall(const llvm::Function *f,
                    << "()\n";
     }
     // we need to register changes to global memory
-    enterShadowFunction(f, {}, true);
+    enterShadowFunction(f, stackFrame, {}, true);
   } else if (std::binary_search(memoryFunctionsList.begin(),
                                 memoryFunctionsList.end(), f)) {
     ConstantExpr *constAddr = dyn_cast<ConstantExpr>(arguments[0]);
@@ -180,7 +181,7 @@ void MemoryState::registerFunctionCall(const llvm::Function *f,
           }
           unregisterWrite(constAddr, *mo, *os, count);
           enterShadowFunction(
-              f,
+              f, stackFrame,
               [constAddr, mo, count](MemoryState &ms) {
                 const auto *os = ms.executionState->addressSpace.findObject(mo);
                 ms.registerWrite(constAddr, *mo, *os, count);
@@ -192,9 +193,10 @@ void MemoryState::registerFunctionCall(const llvm::Function *f,
   }
 }
 
-void MemoryState::registerFunctionRet(const llvm::Function *f) {
-  if (f == shadowedFunction) {
-    leaveShadowFunction(f);
+void MemoryState::registerFunctionRet(const llvm::Function *f,
+                                      std::size_t stackFrame) {
+  if (f == shadowedFunction && stackFrame == shadowedStackFrame) {
+    leaveShadowFunction(f, stackFrame);
   }
 }
 
@@ -478,8 +480,8 @@ bool MemoryState::findInfiniteRecursion() const {
 }
 
 void MemoryState::enterShadowFunction(
-    const llvm::Function *f, std::function<void(MemoryState &)> &&callback,
-    bool registerGlobals) {
+    const llvm::Function *f, std::size_t stackFrame,
+    std::function<void(MemoryState &)> &&callback, bool registerGlobals) {
   if (shadowedFunction) {
     return; // only one function can be entered at a time
   }
@@ -490,13 +492,16 @@ void MemoryState::enterShadowFunction(
   }
 
   shadowedFunction = f;
+  shadowedStackFrame = stackFrame;
   shadowCallback = std::move(callback);
   registerGlobalsInShadow = registerGlobals;
   updateDisableMemoryState();
 }
 
-void MemoryState::leaveShadowFunction(const llvm::Function *f) {
+void MemoryState::leaveShadowFunction(const llvm::Function *f,
+                                      std::size_t stackFrame) {
   assert(f == shadowedFunction);
+  assert(stackFrame == shadowedStackFrame);
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: leaving shadowed function: "
@@ -508,11 +513,18 @@ void MemoryState::leaveShadowFunction(const llvm::Function *f) {
     shadowCallback = {};
   }
   shadowedFunction = nullptr;
+  shadowedStackFrame = 0;
   registerGlobalsInShadow = false;
   updateDisableMemoryState();
 }
 
-void MemoryState::registerPushFrame(const llvm::Function *function) {
+void MemoryState::registerPushFrame(const llvm::Function *function,
+                                    std::size_t stackFrame) {
+
+  if (disableMemoryState && stackFrame != shadowedStackFrame) {
+    return;
+  }
+
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: PUSHFRAME (" << function->getName()
                  << ")\n";
@@ -533,9 +545,14 @@ void MemoryState::registerPushFrame(const llvm::Function *function) {
   }
 }
 
-void MemoryState::registerPopFrame(const llvm::BasicBlock *returningBB,
+void MemoryState::registerPopFrame(std::size_t stackFrame,
+                                   const llvm::BasicBlock *returningBB,
                                    const llvm::BasicBlock *callerBB) {
   // IMPORTANT: has to be called prior to state.popFrame()
+
+  if (disableMemoryState && stackFrame != shadowedStackFrame) {
+    return;
+  }
 
   if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
     llvm::errs() << "MemoryState: POPFRAME ("

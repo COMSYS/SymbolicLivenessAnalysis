@@ -1502,7 +1502,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            std::vector<ref<Expr>> &arguments) {
 
   if (DetectInfiniteLoops) {
-    state.memoryState.registerFunctionCall(f, arguments);
+    state.memoryState.registerFunctionCall(f, state.stack.size() + 1, arguments);
   }
 
   Instruction *i = ki->inst;
@@ -1635,7 +1635,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
     if (DetectInfiniteLoops) {
-      state.memoryState.registerPushFrame(leavingFunction->function);
+      state.memoryState.registerPushFrame(leavingFunction->function,
+                                          state.stack.size());
     }
 
     if (statsTracker)
@@ -1876,7 +1877,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     if (DetectInfiniteLoops) {
       Function *callee = sf.kf->function;
-      state.memoryState.registerFunctionRet(callee);
+      state.memoryState.registerFunctionRet(callee, state.stack.size());
     }
 
     if (!isVoidReturn) {
@@ -1893,7 +1894,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         // has to be called before state.popFrame() to update live register
         // information that is only accessible within the stack frame that is to
         // be left
-        state.memoryState.registerPopFrame(returningBB, callerBB);
+        state.memoryState.registerPopFrame(state.stack.size(), returningBB, callerBB);
       }
       state.popFrame();
 
@@ -3734,7 +3735,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   // there is no new stack frame for external functions and thus no return
   // hence we have to immediately leave any function that is external call
   if (DetectInfiniteLoops) {
-    state.memoryState.registerFunctionRet(function);
+    state.memoryState.registerFunctionRet(function, state.stack.size() + 1);
   }
 
   Type *resultType = target->inst->getType();
