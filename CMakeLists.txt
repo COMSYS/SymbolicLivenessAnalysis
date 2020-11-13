@@ -336,7 +336,7 @@ endif()
 ################################################################################
 # Support for Blake2b (via CryptoPP)
 ################################################################################
-find_package(CryptoPP)
+find_package(CRYPTOPP)
 if (CRYPTOPP_FOUND)
   message(STATUS "CryptoPP found")
   set(TARGET_LIBS ${TARGET_LIBS} cryptopp)
