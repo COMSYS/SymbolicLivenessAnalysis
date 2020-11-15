@@ -166,23 +166,18 @@ namespace {
   cl::OptionCategory LinkCat("Linking options",
                              "These options control the libraries being linked.");
 
-  enum class LibcType { FreeStandingLibc, KleeLibc, UcLibc };
+  enum class LibcType { FreestandingLibc, KleeLibc, UcLibc };
 
-  cl::opt<LibcType>
-  Libc("libc",
-       cl::desc("Choose libc version (none by default)."),
-       cl::values(
-                  clEnumValN(LibcType::FreeStandingLibc,
-                             "none",
-                             "Don't link in a libc (only provide freestanding environment)"),
-                  clEnumValN(LibcType::KleeLibc,
-                             "klee",
-                             "Link in KLEE's libc"),
-                  clEnumValN(LibcType::UcLibc, "uclibc",
-                             "Link in uclibc (adapted for KLEE)")
-                  KLEE_LLVM_CL_VAL_END),
-       cl::init(LibcType::FreeStandingLibc),
-       cl::cat(LinkCat));
+  cl::opt<LibcType> Libc(
+      "libc", cl::desc("Choose libc version (none by default)."),
+      cl::values(
+          clEnumValN(
+              LibcType::FreestandingLibc, "none",
+              "Don't link in a libc (only provide freestanding environment)"),
+          clEnumValN(LibcType::KleeLibc, "klee", "Link in KLEE's libc"),
+          clEnumValN(LibcType::UcLibc, "uclibc",
+                     "Link in uclibc (adapted for KLEE)") KLEE_LLVM_CL_VAL_END),
+      cl::init(LibcType::FreestandingLibc), cl::cat(LinkCat));
 
   cl::list<std::string>
       LinkLibraries("link-llvm-lib",
@@ -196,6 +191,12 @@ namespace {
                    cl::init(false),
                    cl::cat(LinkCat));
 
+  cl::opt<std::string> RuntimeBuild(
+      "runtime-build",
+      cl::desc("Link with versions of the runtime library that were built with "
+               "the provided configuration (default=" RUNTIME_CONFIGURATION
+               ")."),
+      cl::init(RUNTIME_CONFIGURATION), cl::cat(LinkCat));
 
   /*** Checks options ***/
 
@@ -674,8 +675,7 @@ std::string KleeHandler::getRunTimeLibraryPath(const char *argv0) {
     KLEE_DEBUG_WITH_TYPE("klee_runtime", llvm::dbgs() <<
                          "Using build directory KLEE library runtime :");
     libDir = KLEE_DIR;
-    llvm::sys::path::append(libDir,RUNTIME_CONFIGURATION);
-    llvm::sys::path::append(libDir,"lib");
+    llvm::sys::path::append(libDir, "runtime/lib");
   }
 
   KLEE_DEBUG_WITH_TYPE("klee_runtime", llvm::dbgs() <<
@@ -813,6 +813,8 @@ static const char *modelledExternals[] = {
   "klee_warning",
   "klee_warning_once",
   "klee_stack_trace",
+  "_klee_eh_Unwind_RaiseException_impl",
+  "klee_eh_typeid_for",
   "llvm.dbg.declare",
   "llvm.dbg.value",
   "llvm.va_start",
@@ -930,7 +932,7 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
     dontCare.insert(dontCareUclibc,
                     dontCareUclibc+NELEMS(dontCareUclibc));
     break;
-  case LibcType::FreeStandingLibc: /* silence compiler warning */
+  case LibcType::FreestandingLibc: /* silence compiler warning */
     break;
   }
 
@@ -1050,7 +1052,7 @@ static void halt_via_gdb(int pid) {
 
 #ifndef SUPPORT_KLEE_UCLIBC
 static void
-linkWithUclibc(StringRef libDir,
+linkWithUclibc(StringRef libDir, std::string opt_suffix,
                std::vector<std::unique_ptr<llvm::Module>> &modules) {
   klee_error("invalid libc, no uclibc support!\n");
 }
@@ -1141,7 +1143,7 @@ createLibCWrapper(std::vector<std::unique_ptr<llvm::Module>> &modules,
 }
 
 static void
-linkWithUclibc(StringRef libDir,
+linkWithUclibc(StringRef libDir, std::string opt_suffix,
                std::vector<std::unique_ptr<llvm::Module>> &modules) {
   LLVMContext &ctx = modules[0]->getContext();
 
@@ -1162,6 +1164,14 @@ linkWithUclibc(StringRef libDir,
 
   createLibCWrapper(modules, EntryPoint, "__uClibc_main");
   klee_message("NOTE: Using klee-uclibc : %s", uclibcBCA.c_str());
+
+  // Link the fortified library
+  SmallString<128> FortifyPath(libDir);
+  llvm::sys::path::append(FortifyPath,
+                          "libkleeRuntimeFortify" + opt_suffix + ".bca");
+  if (!klee::loadFile(FortifyPath.c_str(), ctx, modules, errorMsg))
+    klee_error("error loading the fortify library '%s': %s",
+               FortifyPath.c_str(), errorMsg.c_str());
 }
 #endif
 
@@ -1268,11 +1278,23 @@ int main(int argc, char **argv, char **envp) {
   }
 
   llvm::Module *mainModule = M.get();
+
+  // Detect architecture
+  std::string opt_suffix = "64"; // Fall back to 64bit
+  if (mainModule->getTargetTriple().find("i686") != std::string::npos ||
+      mainModule->getTargetTriple().find("i586") != std::string::npos ||
+      mainModule->getTargetTriple().find("i486") != std::string::npos ||
+      mainModule->getTargetTriple().find("i386") != std::string::npos)
+    opt_suffix = "32";
+
+  // Add additional user-selected suffix
+  opt_suffix += "_" + RuntimeBuild.getValue();
+
   // Push the module as the first entry
   loadedModules.emplace_back(std::move(M));
 
   std::string LibraryDir = KleeHandler::getRunTimeLibraryPath(argv[0]);
-  Interpreter::ModuleOptions Opts(LibraryDir.c_str(), EntryPoint,
+  Interpreter::ModuleOptions Opts(LibraryDir.c_str(), EntryPoint, opt_suffix,
                                   /*Optimize=*/OptimizeModule,
                                   /*CheckDivZero=*/CheckDivZero,
                                   /*CheckOvershift=*/CheckOvershift);
@@ -1285,7 +1307,7 @@ int main(int argc, char **argv, char **envp) {
 
   if (WithPOSIXRuntime) {
     SmallString<128> Path(Opts.LibraryDir);
-    llvm::sys::path::append(Path, "libkleeRuntimePOSIX.bca");
+    llvm::sys::path::append(Path, "libkleeRuntimePOSIX" + opt_suffix + ".bca");
     klee_message("NOTE: Using POSIX model: %s", Path.c_str());
     if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
                         errorMsg))
@@ -1304,9 +1326,17 @@ int main(int argc, char **argv, char **envp) {
     llvm::sys::path::append(LibcxxBC, KLEE_LIBCXX_BC_NAME);
     if (!klee::loadFile(LibcxxBC.c_str(), mainModule->getContext(), loadedModules,
                         errorMsg))
-      klee_error("error loading free standing support '%s': %s",
-                 LibcxxBC.c_str(), errorMsg.c_str());
+      klee_error("error loading libcxx '%s': %s", LibcxxBC.c_str(),
+                 errorMsg.c_str());
     klee_message("NOTE: Using libcxx : %s", LibcxxBC.c_str());
+#ifdef SUPPORT_KLEE_EH_CXX
+    SmallString<128> EhCxxPath(Opts.LibraryDir);
+    llvm::sys::path::append(EhCxxPath, "libkleeeh-cxx" + opt_suffix + ".bca");
+    if (!klee::loadFile(EhCxxPath.c_str(), mainModule->getContext(),
+                        loadedModules, errorMsg))
+      klee_error("error loading libklee-eh-cxx '%s': %s", EhCxxPath.c_str(),
+                 errorMsg.c_str());
+#endif
 #endif
   }
 
@@ -1314,24 +1344,26 @@ int main(int argc, char **argv, char **envp) {
   case LibcType::KleeLibc: {
     // FIXME: Find a reasonable solution for this.
     SmallString<128> Path(Opts.LibraryDir);
-    llvm::sys::path::append(Path, "libklee-libc.bca");
+    llvm::sys::path::append(Path,
+                            "libkleeRuntimeKLEELibc" + opt_suffix + ".bca");
     if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
                         errorMsg))
       klee_error("error loading klee libc '%s': %s", Path.c_str(),
                  errorMsg.c_str());
   }
   /* Falls through. */
-  case LibcType::FreeStandingLibc: {
+  case LibcType::FreestandingLibc: {
     SmallString<128> Path(Opts.LibraryDir);
-    llvm::sys::path::append(Path, "libkleeRuntimeFreeStanding.bca");
+    llvm::sys::path::append(Path,
+                            "libkleeRuntimeFreestanding" + opt_suffix + ".bca");
     if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
                         errorMsg))
-      klee_error("error loading free standing support '%s': %s", Path.c_str(),
+      klee_error("error loading freestanding support '%s': %s", Path.c_str(),
                  errorMsg.c_str());
     break;
   }
   case LibcType::UcLibc:
-    linkWithUclibc(LibraryDir, loadedModules);
+    linkWithUclibc(LibraryDir, opt_suffix, loadedModules);
     break;
   }
 

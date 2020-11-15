@@ -10,19 +10,9 @@
 ###############################################################################
 # Minimum CMake version and policies
 ###############################################################################
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.5.0)
 if (POLICY CMP0054)
-  # FIXME: This is horrible. With the old behaviour,
-  # quoted strings like "MSVC" in if() conditionals
-  # get implicitly dereferenced. The NEW behaviour
-  # doesn't do this but CMP0054 was only introduced
-  # in CMake 3.1 and we support lower versions as the
-  # minimum. We could set NEW here but it would be very
-  # confusing to use NEW for some builds and OLD for others
-  # which could lead to some subtle bugs. Instead when the
-  # minimum version is 3.1 change this policy to NEW and remove
-  # the hacks in place to work around it.
-  cmake_policy(SET CMP0054 OLD)
+  cmake_policy(SET CMP0054 NEW)
 endif()
 
 if (POLICY CMP0042)
@@ -61,23 +51,6 @@ set(PACKAGE_STRING "\"KLEE ${KLEE_VERSION}\"")
 set(PACKAGE_URL "\"https://klee.github.io\"")
 
 ################################################################################
-# Set various useful variables depending on CMake version
-################################################################################
-if (("${CMAKE_VERSION}" VERSION_EQUAL "3.2") OR ("${CMAKE_VERSION}" VERSION_GREATER "3.2"))
-  # In CMake >= 3.2 add_custom_command() supports a ``USES_TERMINAL`` argument
-  set(ADD_CUSTOM_COMMAND_USES_TERMINAL_ARG "USES_TERMINAL")
-else()
-  set(ADD_CUSTOM_COMMAND_USES_TERMINAL_ARG "")
-endif()
-
-if (("${CMAKE_VERSION}" VERSION_EQUAL "3.4") OR ("${CMAKE_VERSION}" VERSION_GREATER "3.4"))
-  # In CMake >= 3.4 ExternalProject_Add_Step() supports a `USES_TERMINAL` argument
-  set(EXTERNAL_PROJECT_ADD_STEP_USES_TERMINAL_ARG "USES_TERMINAL" "1")
-else()
-  set(EXTERNAL_PROJECT_ADD_STEP_USES_TERMINAL_ARG "")
-endif()
-
-################################################################################
 # Sanity check - Disallow building in source.
 # Otherwise we would overwrite the Makefiles of the old build system.
 ################################################################################
@@ -85,39 +58,6 @@ if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
   message(FATAL_ERROR "In source builds are not allowed. You should invoke "
           "CMake from a different directory.")
 endif()
-
-################################################################################
-# Sanity Check: Check for in source build of the old build system.
-# Some build files from the old build system could interfere with our build.
-################################################################################
-set(KLEE_OLD_BUILD_SYSTEM_FILES
-  "include/klee/Config/config.h"
-  "test/lit.site.cfg"
-)
-foreach (legacy_file ${KLEE_OLD_BUILD_SYSTEM_FILES})
-  if (EXISTS "${CMAKE_SOURCE_DIR}/${legacy_file}")
-    if (EXISTS "${CMAKE_SOURCE_DIR}/.git")
-      set(CLEAN_SRC_DIR_INSTRUCTIONS
-        "The KLEE source tree apears to be a git repository so you can run"
-        " \"git clean -dxn\" to see what files aren't part of the repo and then"
-        " run \"git clean -fdx\" to remove them."
-      )
-    else()
-      # This is the only reliable way to fix this.
-      set(CLEAN_SRC_DIR_INSTRUCTIONS
-        "The KLEE source tree doesn't appear to be a git repository so you will"
-        " need to download a fresh copy of KLEE's source code."
-      )
-    endif()
-    message(FATAL_ERROR "\"${CMAKE_SOURCE_DIR}/${legacy_file}\""
-      " exists in KLEE's source tree. It is likely that the Autoconf/Makefile"
-      " build system was configured to do an in-source build in KLEE's source"
-      " tree. This could cause problems with the CMake build. "
-      ${CLEAN_SRC_DIR_INSTRUCTIONS}
-      " You can then run cmake again."
-    )
-  endif()
-endforeach()
 
 ################################################################################
 # Build type
@@ -302,12 +242,8 @@ endif()
 ################################################################################
 # C++ version
 ################################################################################
-if ("${CMAKE_VERSION}" VERSION_LESS "3.1")
-  add_global_cxx_flag("-std=c++14" REQUIRED)
-else ()
-  set(CMAKE_CXX_STANDARD 14)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-endif ()
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ################################################################################
 # Warnings
@@ -537,23 +473,6 @@ endif()
 include(${CMAKE_SOURCE_DIR}/cmake/workaround_llvm_pr39177.cmake)
 
 ################################################################################
-# Global clean target
-################################################################################
-# CMake already uses the "clean" target name but it doesn't clean everything
-# unfortunately. We can't modify the target so we provide our own "clean_all"
-# target that runs clean. Other rules for performing clean up should declare
-# that "clean_all" depends on those rules.
-add_custom_target(clean_all
-  # Invoke CMake's own clean target
-  COMMAND
-    "${CMAKE_COMMAND}"
-    "--build"
-    "${CMAKE_BINARY_DIR}"
-    "--target"
-    "clean"
-)
-
-################################################################################
 # KLEE runtime support
 ################################################################################
 # This is set here and not in `runtime` because `config.h` needs to be generated.
@@ -583,7 +502,9 @@ message(STATUS "KLEE_RUNTIME_BUILD_TYPE: ${KLEE_RUNTIME_BUILD_TYPE}")
 set(KLEE_INSTALL_RUNTIME_DIR "${CMAKE_INSTALL_FULL_LIBDIR}/klee/runtime")
 
 # Location where KLEE will look for the built runtimes by default.
-set(KLEE_RUNTIME_DIRECTORY "${CMAKE_BINARY_DIR}/${KLEE_RUNTIME_BUILD_TYPE}/lib")
+set(KLEE_RUNTIME_DIRECTORY "${CMAKE_BINARY_DIR}/runtime/lib")
+
+file(MAKE_DIRECTORY ${KLEE_RUNTIME_DIRECTORY})
 
 ################################################################################
 # KLEE POSIX Runtime Support
@@ -626,7 +547,6 @@ if (ENABLE_KLEE_UCLIBC)
 
   # Make a symlink to KLEE_UCLIBC_C_BCA so KLEE can find it where it
   # is expected.
-  file(MAKE_DIRECTORY "${KLEE_RUNTIME_DIRECTORY}")
   execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
     "${KLEE_UCLIBC_C_BCA}"
     "${KLEE_RUNTIME_DIRECTORY}/${KLEE_UCLIBC_BCA_NAME}"
@@ -660,11 +580,19 @@ if (ENABLE_KLEE_LIBCXX)
       "${KLEE_LIBCXX_PATH} does not exist. Try passing -DKLEE_LIBCXX_DIR=<path>")
   endif()
 
-  if (NOT IS_DIRECTORY "${KLEE_LIBCXX_INCLUDE_DIR}")
+  set(KLEE_LIBCXX_INCLUDE_DIR "" CACHE PATH "Path to libcxx include directory")
+  if (NOT EXISTS "${KLEE_LIBCXX_INCLUDE_DIR}")
     message(FATAL_ERROR
       "${KLEE_LIBCXX_INCLUDE_DIR} does not exist. Try passing -DKLEE_LIBCXX_INCLUDE_DIR=<path>")
   endif()
   message(STATUS "Use libc++ include path: \"${KLEE_LIBCXX_INCLUDE_DIR}\"")
+
+  set(KLEE_LIBCXXABI_SRC_DIR "" CACHE PATH "Path to libcxxabi source directory")
+  if (NOT EXISTS "${KLEE_LIBCXXABI_SRC_DIR}")
+    message(FATAL_ERROR
+      "${KLEE_LIBCXXABI_SRC_DIR} does not exist. Try passing -DKLEE_LIBCXXABI_SRC_DIR=<path>")
+  endif()
+  message(STATUS "Use libc++abi source path: \"${KLEE_LIBCXXABI_SRC_DIR}\"")
 
   # Find the library bitcode archive
 
@@ -686,7 +614,7 @@ if (ENABLE_KLEE_LIBCXX)
   endif()
   message(STATUS "Found libc++ library: \"${KLEE_LIBCXX_BC_PATH}\"")
 
-  # Make a symlink to KLEE_LIBCXX_EXTERNAL_OBJECT so KLEE can find it where it
+  # Make a symlink to KLEE_LIBCXX_BC_PATH so KLEE can find it where it
   # is expected.
   file(MAKE_DIRECTORY "${KLEE_RUNTIME_DIRECTORY}")
   execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
@@ -707,6 +635,28 @@ if (ENABLE_KLEE_LIBCXX)
 else()
   message(STATUS "libc++ support disabled")
   set(SUPPORT_KLEE_LIBCXX 0) # For config.h
+endif()
+
+################################################################################
+# KLEE Exception Handling Support for C++
+################################################################################
+option(ENABLE_KLEE_EH_CXX "Enable support for C++ Exceptions" OFF)
+if (ENABLE_KLEE_EH_CXX)
+  if (NOT ENABLE_KLEE_LIBCXX)
+    message(FATAL_ERROR "C++ Exception support requires klee-libcxx."
+      "Pass `-DENABLE_KLEE_LIBCXX=ON` to enable it.")
+  endif()
+
+  if (${LLVM_VERSION_MAJOR} GREATER 8 OR ${LLVM_VERSION_MAJOR} EQUAL 8)
+    set(SUPPORT_KLEE_EH_CXX 1) # For config.h
+    message(STATUS "Support for C++ Exceptions enabled")
+  else()
+    set(SUPPORT_KLEE_EH_CXX 0) # For config.h
+    message(STATUS "Support for C++ Exceptions (only available for LLVM >= 8.0.0) disabled")
+  endif()
+
+else()
+  set(SUPPORT_KLEE_EH_CXX 0) # For config.h
 endif()
 
 ################################################################################

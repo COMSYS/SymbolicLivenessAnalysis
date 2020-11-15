@@ -15,11 +15,13 @@
 #include "MemoryManager.h"
 #include "MergeHandler.h"
 #include "Searcher.h"
+#include "StatsTracker.h"
 #include "TimingSolver.h"
 
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
 #include "klee/Solver/SolverCmdLine.h"
+#include "klee/Support/Casting.h"
 #include "klee/Support/Debug.h"
 #include "klee/Support/ErrorHandling.h"
 #include "klee/Support/InfiniteLoopDetectionFlags.h"
@@ -27,6 +29,7 @@
 
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
 #include <errno.h>
@@ -117,6 +120,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("malloc", handleMalloc, true),
   add("memalign", handleMemalign, true),
   add("realloc", handleRealloc, true),
+  add("_klee_eh_Unwind_RaiseException_impl", handleEhUnwindRaiseExceptionImpl, false),
 
   // operator delete[](void*)
   add("_ZdaPv", handleDeleteArray, false),
@@ -141,6 +145,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("__ubsan_handle_sub_overflow", handleSubOverflow, false),
   add("__ubsan_handle_mul_overflow", handleMulOverflow, false),
   add("__ubsan_handle_divrem_overflow", handleDivRemOverflow, false),
+  add("klee_eh_typeid_for", handleEhTypeid, true),
 
 #undef addDNR
 #undef add
@@ -456,6 +461,44 @@ void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
 
   executor.executeAlloc(state, arguments[1], false, target, false, 0,
                         alignment);
+}
+
+void SpecialFunctionHandler::handleEhUnwindRaiseExceptionImpl(
+    ExecutionState &state, KInstruction *target,
+    std::vector<ref<Expr>> &arguments) {
+  assert(arguments.size() == 1 &&
+         "invalid number of arguments to _klee_eh_Unwind_RaiseException_impl");
+
+  ref<ConstantExpr> exceptionObject = dyn_cast<ConstantExpr>(arguments[0]);
+  if (!exceptionObject) {
+    executor.terminateStateOnError(state,
+                                   "Internal error: Symbolic exception pointer",
+                                   Executor::Unhandled);
+    return;
+  }
+
+  if (isa_and_nonnull<SearchPhaseUnwindingInformation>(
+          state.unwindingInformation.get())) {
+    executor.terminateStateOnExecError(
+        state,
+        "Internal error: Unwinding restarted during an ongoing search phase");
+    return;
+  }
+
+  state.unwindingInformation =
+      std::make_unique<SearchPhaseUnwindingInformation>(exceptionObject,
+                                                        state.stack.size() - 1);
+
+  executor.unwindToNextLandingpad(state);
+}
+
+void SpecialFunctionHandler::handleEhTypeid(ExecutionState &state,
+                                            KInstruction *target,
+                                            std::vector<ref<Expr>> &arguments) {
+  assert(arguments.size() == 1 &&
+         "invalid number of arguments to klee_eh_typeid_for");
+
+  executor.bindLocal(target, state, executor.getEhTypeidFor(arguments[0]));
 }
 
 void SpecialFunctionHandler::handleAssume(ExecutionState &state,

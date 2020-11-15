@@ -143,7 +143,7 @@ private:
     auto head = updates.head;
 
     // Special case empty list.
-    if (head.isNull()) {
+    if (!head) {
       // FIXME: We need to do something (assert, mangle, etc.) so that printing
       // distinct arrays with the same name doesn't fail.
       PC << updates.root->name;
@@ -158,7 +158,7 @@ private:
     // We only have to print the most recent update
     std::vector<ref<Expr>> prevUpdate;
 
-    for (auto un = head; !un.isNull(); un = un->next) {
+    for (auto un = head; un; un = un->next) {
       // We are done if we hit the cache.
       std::map<const UpdateNode *, unsigned>::iterator it =
           updateBindings.find(un.get());

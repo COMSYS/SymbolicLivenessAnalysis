@@ -203,41 +203,69 @@ klee::linkModules(std::vector<std::unique_ptr<llvm::Module>> &modules,
     return nullptr;
   }
 
-  while (true) {
+  auto containsUsedSymbols = [](const llvm::Module *module) {
+    GlobalValue *GV =
+        dyn_cast_or_null<GlobalValue>(module->getNamedValue("llvm.used"));
+    if (!GV)
+      return false;
+    KLEE_DEBUG_WITH_TYPE("klee_linker", dbgs() << "Used attribute in "
+                                               << module->getModuleIdentifier()
+                                               << '\n');
+    return true;
+  };
+
+  for (auto &module : modules) {
+    if (!module || !containsUsedSymbols(module.get()))
+      continue;
+    if (!linkTwoModules(composite.get(), std::move(module), errorMsg)) {
+      // Linking failed
+      errorMsg = "Linking module containing '__attribute__((used))'"
+                 " symbols with composite failed:" +
+                 errorMsg;
+      return nullptr;
+    }
+    module = nullptr;
+  }
+
+  bool symbolsLinked = true;
+  while (symbolsLinked) {
+    symbolsLinked = false;
     std::set<std::string> undefinedSymbols;
     GetAllUndefinedSymbols(composite.get(), undefinedSymbols);
+    auto hasRequiredDefinition = [&undefinedSymbols](
+                                     const llvm::Module *module) {
+      for (auto symbol : undefinedSymbols) {
+        GlobalValue *GV =
+            dyn_cast_or_null<GlobalValue>(module->getNamedValue(symbol));
+        if (GV && !GV->isDeclaration()) {
+          KLEE_DEBUG_WITH_TYPE("klee_linker",
+                               dbgs() << "Found " << GV->getName() << " in "
+                                      << module->getModuleIdentifier() << "\n");
+          return true;
+        }
+      }
+      return false;
+    };
 
     // Stop in nothing is undefined
     if (undefinedSymbols.empty())
       break;
 
-    bool merged = false;
     for (auto &module : modules) {
       if (!module)
         continue;
 
-      for (auto symbol : undefinedSymbols) {
-        GlobalValue *GV =
-            dyn_cast_or_null<GlobalValue>(module->getNamedValue(symbol));
-        if (!GV || GV->isDeclaration())
-          continue;
+      if (!hasRequiredDefinition(module.get()))
+        continue;
 
-        // Found symbol, therefore merge in module
-        KLEE_DEBUG_WITH_TYPE("klee_linker",
-                             dbgs() << "Found " << GV->getName() << " in "
-                                    << module->getModuleIdentifier() << "\n");
-        if (linkTwoModules(composite.get(), std::move(module), errorMsg)) {
-          module = nullptr;
-          merged = true;
-          break;
-        }
+      if (!linkTwoModules(composite.get(), std::move(module), errorMsg)) {
         // Linking failed
         errorMsg = "Linking archive module with composite failed:" + errorMsg;
         return nullptr;
       }
+      module = nullptr;
+      symbolsLinked = true;
     }
-    if (!merged)
-      break;
   }
 
   // Condense the module array
@@ -263,7 +291,14 @@ Function *klee::getDirectCallTarget(
   // Walk through aliases and bitcasts to try to find
   // the function being called.
   do {
-    if (Function *f = dyn_cast<Function>(v)) {
+    if (isa<llvm::GlobalVariable>(v)) {
+      // We don't care how we got this GlobalVariable
+      viaConstantExpr = false;
+
+      // Global variables won't be a direct call target. Instead, their
+      // value need to be read and is handled as indirect call target.
+      v = nullptr;
+    } else if (Function *f = dyn_cast<Function>(v)) {
       return f;
     } else if (llvm::GlobalAlias *ga = dyn_cast<GlobalAlias>(v)) {
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
@@ -273,22 +308,22 @@ Function *klee::getDirectCallTarget(
 #endif
         v = ga->getAliasee();
       } else {
-        v = NULL;
+        v = nullptr;
       }
     } else if (llvm::ConstantExpr *ce = dyn_cast<llvm::ConstantExpr>(v)) {
       viaConstantExpr = true;
       v = ce->getOperand(0)->stripPointerCasts();
     } else {
-      v = NULL;
+      v = nullptr;
     }
-  } while (v != NULL);
+  } while (v != nullptr);
 
   // NOTE: This assert may fire, it isn't necessarily a problem and
   // can be disabled, I just wanted to know when and if it happened.
   (void) viaConstantExpr;
   assert((!viaConstantExpr) &&
          "FIXME: Unresolved direct target for a constant expression");
-  return NULL;
+  return nullptr;
 }
 
 static bool valueIsOnlyCalled(const Value *v) {
