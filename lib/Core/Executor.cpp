@@ -3002,7 +3002,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   // Other instructions...
   // Unhandled
   default:
-    terminateStateOnExecError(state, "illegal instruction");
+    terminateStateOnExecError(state, "illegal instruction", i->getOpcodeName());
     break;
   }
 }
