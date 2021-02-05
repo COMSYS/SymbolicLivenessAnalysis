@@ -11,8 +11,12 @@ add_subdirectory(Runtest)
 
 # Handle bitcode libraries
 # Define the different configurations to be compiled and made available using a specific suffix
+set(bc_architectures 64)
 
-set(bc_architectures 32 64)
+# Compile 32bit support if available
+if (M32_SUPPORTED)
+    list(APPEND bc_architectures "32")
+endif ()
 
 set(LIB_BC_SUFFIX "")
 
@@ -30,17 +34,17 @@ foreach (bc_architecture ${bc_architectures})
 
         # Set specific compiler flags depending on the optimization
         if (bc_optimization STREQUAL "Release")
-            list(APPEND local_flags -O2 -DNDebug)
+            list(APPEND local_flags -O2 -DNDEBUG)
         elseif (bc_optimization STREQUAL "Release+Debug")
-            list(APPEND local_flags -O2 -g -DNDebug)
+            list(APPEND local_flags -O2 -g -D_DEBUG -DNDEBUG)
         elseif (bc_optimization STREQUAL "Release+Asserts")
-            list(APPEND local_flags -O2 -g)
+            list(APPEND local_flags -O2)
         elseif (bc_optimization STREQUAL "Release+Debug+Asserts")
-            list(APPEND local_flags -O2 -g)
+            list(APPEND local_flags -O2 -g -D_DEBUG)
         elseif (bc_optimization STREQUAL "Debug")
-            list(APPEND local_flags -g -DNDebug)
+            list(APPEND local_flags -g -D_DEBUG -DNDEBUG)
         elseif (bc_optimization STREQUAL "Debug+Asserts")
-            list(APPEND local_flags -g)
+            list(APPEND local_flags -g -D_DEBUG)
         else()
             message(FATAL_ERROR
                     "Optimization (\"${bc_optimization}\") for runtime library unknown.")
@@ -55,13 +59,12 @@ message(STATUS "LIB_BC_SUFFIX: ${LIB_BC_SUFFIX}")
 message(STATUS "KLEE_RUNTIME_DIRECTORY: ${KLEE_RUNTIME_DIRECTORY}")
 
 # Add additional setups if needed, e.g.
-# `list(APPEND LIB_BC_SUFFIX MY_SPECIAL_CONFIG)`
+# `list(APPEND LIB_BC_SUFFIX 64_MY_SPECIAL_CONFIG)`
 
-# Following define the specific flags: LIB_BC_FLAGS_*SUFFIX_FROM_ABOVE*
-set(LIB_BC_FLAGS_64)
-set(LIB_BC_FLAGS_32
-        -m32
-        )
+# Following define the specific flags: LIB_BC_FLAGS_*SUFFIX_FROM_ABOVE*, e.g.
+# ```set(LIB_BC_FLAGS_64_MY_SPECIAL_CONFIG
+#         -DSOME_DEFINE
+# )``
 
 # Common for all library configurations
 # Since the runtime now contains fortified libc functions, it is
@@ -70,8 +73,6 @@ set(LIB_BC_FLAGS_32
 set(COMMON_CC_FLAGS
         "-I${CMAKE_SOURCE_DIR}/include"
         "-I${CMAKE_BINARY_DIR}/include"
-        -g
-        -D_DEBUG
         -D_FORTIFY_SOURCE=0
         -D_GNU_SOURCE
         -D__STDC_LIMIT_MACROS

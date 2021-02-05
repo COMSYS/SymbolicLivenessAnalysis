@@ -47,7 +47,7 @@ cmake -DCMAKE_BUILD_TYPE=Release /path/to/klee/src
 
 * `ENABLE_KLEE_EH_CXX` (BOOLEAN) - Enable support for C++ Exceptions.
 
-* `ENABLE_KLEE_LIBCXX` (BOOLEAN) - Enable libcxx for klee.
+* `ENABLE_KLEE_LIBCXX` (BOOLEAN) - Enable libc++ for klee.
 
 * `ENABLE_KLEE_UCLIBC` (BOOLEAN) - Enable support for klee-uclibc.
 
@@ -74,11 +74,11 @@ cmake -DCMAKE_BUILD_TYPE=Release /path/to/klee/src
 
 * `KLEE_ENABLE_TIMESTAMP` (BOOLEAN) - Enable timestamps in KLEE sources.
 
-* `KLEE_LIBCXX_DIR` (STRING) - Path to root directory with libcxx shared object.
+* `KLEE_LIBCXX_DIR` (STRING) - Path to directory containing libc++ shared object (bitcode).
 
-* `KLEE_LIBCXX_INCLUDE_DIR` (STRING) - Path to libcxx include directory.
+* `KLEE_LIBCXX_INCLUDE_DIR` (STRING) - Path to libc++ include directory.
 
-* `KLEE_LIBCXXABI_SRC_DIR` (STRING) - Path to libcxxabi source directory.
+* `KLEE_LIBCXXABI_SRC_DIR` (STRING) - Path to libc++abi source directory.
 
 * `KLEE_UCLIBC_PATH` (STRING) - Path to klee-uclibc root directory.
 
@@ -96,8 +96,6 @@ cmake -DCMAKE_BUILD_TYPE=Release /path/to/klee/src
 * `LLVM_DIR` (STRING) - Path to `LLVMConfig.cmake`. This is only relevant if
    `USE_CMAKE_FIND_PACKAGE_LLVM` is `TRUE`. This can be used to tell CMake where
    it can find LLVM outside of standard directories.
-
-* `MAKE_BINARY` (STRING) - Path to `make` binary used to build KLEE's runtime.
 
 * `metaSMT_DIR` (STRING) - Provides a hint to CMake, where the metaSMT constraint
   solver can be found.  This should be an absolute path to a directory
