@@ -3952,7 +3952,8 @@ void Executor::terminateStateOnError(ExecutionState &state,
       msg << "File: " << ii.file << '\n'
           << "Line: " << ii.line << '\n'
           << "assembly.ll line: " << ii.assemblyLine << '\n'
-          << "State: " << state.getID() << '\n';
+          << "State: " << state.getID() << '\n'
+          << "Instructions (State): " << state.steppedInstructions << '\n';
     }
     auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeToError);
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(timeToError) - seconds;
