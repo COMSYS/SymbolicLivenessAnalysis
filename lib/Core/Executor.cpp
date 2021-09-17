@@ -4195,6 +4195,11 @@ void Executor::executeAlloc(ExecutionState &state,
     if (allocationAlignment == 0) {
       allocationAlignment = getAllocationAlignment(allocSite);
     }
+    if (reallocFrom && reallocFrom->size == CE->getZExtValue() && allocationAlignment <= 8) {
+      // reallocation with same size
+      bindLocal(target, state, reallocFrom->getObject()->getBaseExpr());
+      return;
+    }
     MemoryObject *mo =
         memory->allocate(CE->getZExtValue(), isLocal, /*isGlobal=*/false,
                          allocSite, state.stack.size()-1, allocationAlignment);
@@ -4209,9 +4214,6 @@ void Executor::executeAlloc(ExecutionState &state,
         os->initializeToRandom();
       }
 
-      if (DetectInfiniteLoops) {
-        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
-      }
       bindLocal(target, state, mo->getBaseExpr());
       
       if (reallocFrom) {
@@ -4219,7 +4221,16 @@ void Executor::executeAlloc(ExecutionState &state,
         for (unsigned i=0; i<count; i++)
           os->write(i, reallocFrom->read8(i));
         const MemoryObject *reallocatedObject = reallocFrom->getObject();
+
+        if (DetectInfiniteLoops) {
+          state.memoryState.unregisterWrite(*reallocatedObject, *reallocFrom);
+        }
+
         state.addressSpace.unbindObject(reallocatedObject);
+      }
+
+      if (DetectInfiniteLoops) {
+        state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
       }
     }
   } else {
