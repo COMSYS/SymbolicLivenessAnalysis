@@ -577,100 +577,14 @@ endif()
 ################################################################################
 # KLEE libcxx support
 ################################################################################
-option(ENABLE_KLEE_LIBCXX "Enable libc++ for klee" OFF)
-if (ENABLE_KLEE_LIBCXX)
-  message(STATUS "klee-libc++ support enabled")
-  set(SUPPORT_KLEE_LIBCXX 1) # For config.h
-  set(KLEE_LIBCXX_DIR "" CACHE PATH "Path to directory containing libc++ shared object (bitcode)")
-  if (NOT EXISTS "${KLEE_LIBCXX_DIR}")
-    message(FATAL_ERROR
-      "KLEE_LIBCXX_DIR (\"${KLEE_LIBCXX_DIR}\") does not exist.\n"
-      "Try passing -DKLEE_LIBCXX_DIR=<path> to CMake where <path> is the path"
-      "to the directory containing the libc++ shared object file (as bitcode).")
-  endif()
-
-  set(KLEE_LIBCXX_INCLUDE_DIR "" CACHE PATH "Path to libc++ include directory")
-  if (NOT EXISTS "${KLEE_LIBCXX_INCLUDE_DIR}")
-    message(FATAL_ERROR
-      "KLEE_LIBCXX_INCLUDE_DIR (\"${KLEE_LIBCXX_INCLUDE_DIR}\") does not exist.\n"
-      "Try passing -DKLEE_LIBCXX_INCLUDE_DIR=<path> to CMake where <path> is the"
-      "libc++ include directory.")
-  endif()
-  message(STATUS "Use libc++ include path: \"${KLEE_LIBCXX_INCLUDE_DIR}\"")
-
-  # Find the library bitcode archive
-
-  # Check for static first
-  set(KLEE_LIBCXX_BC_NAME "libc++.bca")
-  set(KLEE_LIBCXX_BC_PATH "${KLEE_LIBCXX_DIR}/lib/${KLEE_LIBCXX_BC_NAME}")
-  if (NOT EXISTS "${KLEE_LIBCXX_BC_PATH}")
-    # Check for dynamic so lib
-    set(KLEE_LIBCXX_BC_NAME "libc++.so.bc")
-    set(KLEE_LIBCXX_BC_PATH "${KLEE_LIBCXX_DIR}/lib/${KLEE_LIBCXX_BC_NAME}")
-    if (NOT EXISTS "${KLEE_LIBCXX_BC_PATH}")
-      set(KLEE_LIBCXX_BC_NAME "libc++.dylib.bc")
-      set(KLEE_LIBCXX_BC_PATH "${KLEE_LIBCXX_DIR}/lib/${KLEE_LIBCXX_BC_NAME}")
-      if (NOT EXISTS "${KLEE_LIBCXX_BC_PATH}")
-        message(FATAL_ERROR
-          "libc++ library not found at \"${KLEE_LIBCXX_DIR}\"")
-      endif()
-    endif()
-  endif()
-  message(STATUS "Found libc++ library: \"${KLEE_LIBCXX_BC_PATH}\"")
-
-  # Make a symlink to KLEE_LIBCXX_BC_PATH so KLEE can find it where it
-  # is expected.
-  file(MAKE_DIRECTORY "${KLEE_RUNTIME_DIRECTORY}")
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-    "${KLEE_LIBCXX_BC_PATH}"
-    "${KLEE_RUNTIME_DIRECTORY}/${KLEE_LIBCXX_BC_NAME}"
-  )
-  list(APPEND KLEE_COMPONENT_CXX_DEFINES
-    -DKLEE_LIBCXX_BC_NAME=\"${KLEE_LIBCXX_BC_NAME}\")
-
-  # Add libc++ to the install target. We install the original
-  # file rather than the symlink because CMake would just copy the symlink
-  # rather than the file.
-  install(FILES "${KLEE_LIBCXX_BC_PATH}"
-    DESTINATION "${KLEE_INSTALL_RUNTIME_DIR}"
-    RENAME "${KLEE_LIBCXX_BC_NAME}"
-    )
-
-else()
-  message(STATUS "libc++ support disabled")
-  set(SUPPORT_KLEE_LIBCXX 0) # For config.h
-endif()
+# FIXME: NOT SUPPORTED IN THIS FORK!
+set(SUPPORT_KLEE_LIBCXX 0) # For config.h
 
 ################################################################################
 # KLEE Exception Handling Support for C++
 ################################################################################
-option(ENABLE_KLEE_EH_CXX "Enable support for C++ Exceptions" OFF)
-if (ENABLE_KLEE_EH_CXX)
-  if (NOT ENABLE_KLEE_LIBCXX)
-    message(FATAL_ERROR "C++ Exception support requires klee-libc++."
-      "Pass -DENABLE_KLEE_LIBCXX=ON to CMake to enable it.")
-  endif()
-
-  set(KLEE_LIBCXXABI_SRC_DIR "" CACHE PATH "Path to libc++abi source directory")
-  if (NOT EXISTS "${KLEE_LIBCXXABI_SRC_DIR}")
-    message(FATAL_ERROR
-      "KLEE_LIBCXXABI_SRC_DIR (\"${KLEE_LIBCXXABI_SRC_DIR}\") does not exist.\n"
-      "Try passing -DKLEE_LIBCXXABI_SRC_DIR=<path> to CMake where <path> is the"
-      "libc++abi source directory.")
-  endif()
-  message(STATUS "Use libc++abi source path: \"${KLEE_LIBCXXABI_SRC_DIR}\"")
-
-  if (${LLVM_VERSION_MAJOR} GREATER 8 OR ${LLVM_VERSION_MAJOR} EQUAL 8)
-    set(SUPPORT_KLEE_EH_CXX 1) # For config.h
-    message(STATUS "Support for C++ Exceptions enabled")
-  else()
-    set(SUPPORT_KLEE_EH_CXX 0) # For config.h
-    message(STATUS "Support for C++ Exceptions (only available for LLVM >= 8.0.0) disabled")
-  endif()
-
-else()
-  set(SUPPORT_KLEE_EH_CXX 0) # For config.h
-endif()
+# FIXME: NOT SUPPORTED IN THIS FORK!
+set(SUPPORT_KLEE_EH_CXX 0) # For config.h
 
 ################################################################################
 # Sanitizer support
