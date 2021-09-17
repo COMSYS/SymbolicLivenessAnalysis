@@ -2033,6 +2033,10 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
               os->write(offsets[k] + i, osarg->read8(i));
           }
         }
+
+        if (DetectInfiniteLoops) {
+          state.memoryState.registerWrite(mo->getBaseExpr(), *mo, *os);
+        }
       }
     }
 
