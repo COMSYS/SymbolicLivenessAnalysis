@@ -589,6 +589,10 @@ void MemoryState::registerPopFrame(std::size_t stackFrame,
   } else {
     // no stackframe left to pop
 
+    // We need to clear the trace to prevent mixing stack frames
+    trace.clear();
+    fingerprint.discardEverything();
+
     if (DebugInfiniteLoopDetection.isSet(STDERR_STATE)) {
       llvm::errs() << "no stackframe left in trace\n";
     }
