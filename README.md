@@ -67,8 +67,8 @@ Disable infinite loop detection optimzation that only starts searching for loops
 
 Along with submission to CAV 2018, we prepared an artifact for evaluation, which can be obtained through the following links:
 
-  * [Instructions](https://www.dropbox.com/s/xzg8vebwrgaic73/cav18-SymbolicLivenessAnalysis.txt?dl=0)
-  * [VM image (*.ova)](https://www.dropbox.com/s/q01nh5fvin79l0w/cav18-SymbolicLivenessAnalysis.ova?dl=0)
+  * [Instructions](https://www.dropbox.com/s/p7hmxs24f3qiv1o/cav18-SymbolicLivenessAnalysis.txt?dl=0)
+  * [VM image (*.ova)](https://www.dropbox.com/s/xoyd03cxxwcf3xr/cav18-SymbolicLivenessAnalysis.ova?dl=1)
 
 ## Publication
 
