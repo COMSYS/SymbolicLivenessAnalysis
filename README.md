@@ -63,12 +63,9 @@ Truncate memory trace (used for infinite loop detection) on every state fork (de
 ```
 Disable infinite loop detection optimzation that only starts searching for loops on basic blocks with at least two predecessors (default=false)
 
-## CAV 2018 Artifact Evaluation
+## CAV 2018 Artifact
 
-Along with submission to CAV 2018, we prepared an artifact for evaluation, which can be obtained through the following links:
-
-  * [Instructions](https://www.dropbox.com/s/p7hmxs24f3qiv1o/cav18-SymbolicLivenessAnalysis.txt?dl=0)
-  * [VM image (*.ova)](https://www.dropbox.com/s/xoyd03cxxwcf3xr/cav18-SymbolicLivenessAnalysis.ova?dl=1)
+Along with submission to CAV 2018, we prepared an artifact, which can be obtained from [10.5281/zenodo.5771192](https://doi.org/10.5281/zenodo.5771192).
 
 ## Publication
 
